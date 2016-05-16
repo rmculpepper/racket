@@ -452,7 +452,7 @@
   (define not-shadowed? (make-not-shadowed? decls))
   (check-pattern
   (syntax-case* stx (~var ~literal ~datum ~and ~or ~not ~rest ~describe
-                     ~seq ~optional ~! ~bind ~fail ~parse ~do
+                     ~seq ~optional ~! ~bind ~check ~fail ~parse ~do
                      ~post ~peek ~peek-not ~delimit-cut ~commit ~reflect
                      ~splicing-reflect)
                 (make-not-shadowed-id=? decls)
@@ -553,12 +553,13 @@
       (parse-pat:reflect stx decls #t))]
     [(~bind . rest)
      (disappeared! stx)
-     (check-action!
-      (parse-pat:bind stx decls))]
+     (check-action! (parse-pat:bind stx decls))]
+    [(~check . rest)
+     (disappeared! stx)
+     (check-action! (parse-pat:check stx decls))]
     [(~fail . rest)
      (disappeared! stx)
-     (check-action!
-      (parse-pat:fail stx decls))]
+     (check-action! (parse-pat:fail stx decls))]
     [(~post . rest)
      (disappeared! stx)
      (parse-pat:post stx decls allow-head? allow-action?)]
@@ -1002,6 +1003,11 @@
      (let ([clauses (check-bind-clause-list #'(clause ...) stx)])
        (create-action:and clauses))]))
 
+(define (parse-pat:check stx decls)
+  (syntax-case stx ()
+    [(_ check-expr)
+     (action:check #'check-expr)]))
+
 (define (parse-pat:fail stx decls)
   (syntax-case stx ()
     [(_ . rest)
@@ -1202,6 +1208,9 @@
                    "#:declare can only appear immediately after pattern or #:with clause")]
     [(cons (list '#:role role-stx _) rest)
      (wrong-syntax role-stx "#:role can only appear immediately after #:declare clause")]
+    [(cons (list '#:check c-stx check-expr) rest)
+     (cons (action:check check-expr)
+           (parse-pattern-sides rest decls))]
     [(cons (list '#:fail-when fw-stx when-expr msg-expr) rest)
      (cons (action:fail when-expr msg-expr)
            (parse-pattern-sides rest decls))]
@@ -1581,6 +1590,7 @@
 (define pattern-directive-table
   (list (list '#:declare check-identifier check-expression)
         (list '#:role check-expression) ;; attached to preceding #:declare
+        (list '#:check check-expression)
         (list '#:fail-when check-expression check-expression)
         (list '#:fail-unless check-expression check-expression)
         (list '#:when check-expression)

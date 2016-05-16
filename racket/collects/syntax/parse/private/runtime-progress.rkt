@@ -32,7 +32,12 @@
          es-add-message
          es-add-atom
          es-add-literal
-         es-add-proper-pair)
+         es-add-proper-pair
+
+         stxfault
+         stxfault?
+         check-check-result
+         check->failure)
 
 ;; FIXME: add phase to expect:literal
 
@@ -247,3 +252,26 @@ A FirstDesc is one of
  - (list 'literal symbol)
  - (list 'datum datum)
 |#
+
+
+;; == check support
+
+;; A stxfault is (stxfault Syntax/#f String)
+(define-struct stxfault (stx msg))
+
+;; check-check-result : Any -> stxfault/#f
+(define (check-check-result v)
+  (cond [(eq? v #f) #f]
+        [(eq? v (void)) #f]
+        [(stxfault? v) v]
+        [else
+         (error 'syntax-parse
+                "bad result from #:check clause or ~~check pattern\n  result: ~e" v)]))
+
+;; check->failure : stxfault Progress ExpectStack -> Failure
+(define (check->failure fault pr es)
+  (match fault
+    [(stxfault stx msg)
+     (let ([pr* (if (syntax? stx) (ps-add-stx pr stx) pr)]
+           [es* (es-add-message msg es)])
+       (failure pr* es*))]))

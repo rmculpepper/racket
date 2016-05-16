@@ -70,6 +70,7 @@ A ListPattern is a subtype of SinglePattern; one of
 A ActionPattern is one of
   (action:cut)
   (action:fail stx stx)
+  (action:check stx)
   (action:bind IAttr Stx)
   (action:and (listof ActionPattern))
   (action:parse SinglePattern stx)
@@ -83,6 +84,7 @@ A SideClause is just an ActionPattern
 
 (define-struct action:cut () #:prefab)
 (define-struct action:fail (when message) #:prefab)
+(define-struct action:check (expr) #:prefab)
 (define-struct action:bind (attr expr) #:prefab)
 (define-struct action:and (patterns) #:prefab)
 (define-struct action:parse (pattern expr) #:prefab)
@@ -164,6 +166,7 @@ A RepConstraint is one of
 (define (action-pattern? x)
   (or (action:cut? x)
       (action:bind? x)
+      (action:check? x)
       (action:fail? x)
       (action:and? x)
       (action:parse? x)
@@ -258,6 +261,8 @@ A RepConstraint is one of
 
     ;; -- A patterns
     [(action:cut)
+     null]
+    [(action:check _)
      null]
     [(action:fail _ _)
      null]
@@ -419,6 +424,7 @@ A RepConstraint is one of
         [(pat:integrated? p) AF-SUB]
         ;; Action patterns
         [(action:cut? p) AF-NONE]
+        [(action:check? p) AF-SUB]
         [(action:fail? p) AF-SUB]
         [(action:bind? p) AF-NONE]
         [(action:and? p) (patterns-AF (action:and-patterns p))]

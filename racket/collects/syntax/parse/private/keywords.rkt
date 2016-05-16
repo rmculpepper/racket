@@ -26,6 +26,7 @@
 (define-keyword ~describe)
 (define-keyword ~!)
 (define-keyword ~bind)
+(define-keyword ~check)
 (define-keyword ~fail)
 (define-keyword ~parse)
 (define-keyword ~do)

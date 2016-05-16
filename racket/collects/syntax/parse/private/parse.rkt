@@ -714,6 +714,10 @@ Conventions:
         #'(with ([fail-handler cut-prompt]) k)]
        [#s(action:bind a expr)
         #'(let-attributes ([a (wrap-user-code expr)]) k)]
+       [#s(action:check check-expr)
+        (with-syntax ([check-expr* (syntax/loc #'check-expr (check-check-result check-expr))])
+          #'(let ([c (wrap-user-code check-expr*)])
+              (if c (fail (check->failure c pr es)) k)))]
        [#s(action:fail condition message)
         #`(let ([c (wrap-user-code condition)])
             (if c
