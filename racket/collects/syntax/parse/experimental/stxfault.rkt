@@ -93,4 +93,4 @@
   (if (< index (length term-colors)) (list-ref term-colors index) "gray"))
 
 (define term-colors
-  '("violet" "green" "yellow"))
+  '("green" "violet" "lightblue"))
