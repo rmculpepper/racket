@@ -75,18 +75,17 @@
 
 (define (optimize-matrix0 rows)
   (define now (current-inexact-milliseconds))
-  (when (and DEBUG-OPT-SUCCEED (> (length rows) 1))
-    (eprintf "\n%% optimizing (~s):\n" (length rows))
-    (pretty-write (matrix->sexpr rows) (current-error-port)))
+  (when (and (> (length rows) 1))
+    (log-syntax-parse-debug "OPT matrix (~s rows)\n~a" (length rows)
+                            (pretty-format (matrix->sexpr rows) #:mode 'print)))
   (define result (optimize-matrix rows))
   (define then (current-inexact-milliseconds))
-  (when (and DEBUG-OPT-SUCCEED (> (length rows) 1))
+  (when (and (> (length rows) 1))
     (cond [(= (length result) (length rows))
-           (eprintf "%% !! FAILED !! (~s ms)\n\n" (floor (- then now)))]
+           (log-syntax-parse-debug "OPT FAILED (~s ms)" (floor (- then now)))]
           [else
-           (eprintf "==> (~s ms)\n" (floor (- then now)))
-           (pretty-write (matrix->sexpr result) (current-error-port))
-           (eprintf "\n")]))
+           (log-syntax-parse-debug "OPT ==> (~s ms)\n~a" (floor (- then now))
+                                   (pretty-format (matrix->sexpr result) #:mode 'print))]))
   result)
 
 ;; optimize-matrix : (listof pk1) -> Matrix
@@ -140,8 +139,7 @@
     [(pat:pair head tail)
      (values (lambda (p) (pat:pair? p))
              (lambda (rows)
-               (when DEBUG-OPT-SUCCEED
-                 (eprintf "-- accumulated ~s rows like ~e\n" (length rows) (pattern->sexpr pat1)))
+               (log-syntax-parse-debug "-- got ~s pair rows like ~e" (length rows) (pattern->sexpr pat1))
                (cond [(> (length rows) 1)
                       (pk/pair (optimize-matrix
                                 (for/list ([row (in-list rows)])
@@ -155,8 +153,7 @@
     [(? pattern-factorable?)
      (values (lambda (pat2) (pattern-equal? pat1 pat2))
              (lambda (rows)
-               (when DEBUG-OPT-SUCCEED
-                 (eprintf "-- accumulated ~s rows like ~e\n" (length rows) (pattern->sexpr pat1)))
+               (log-syntax-parse-debug "-- got ~s factorable like ~e" (length rows) (pattern->sexpr pat1))
                (cond [(> (length rows) 1)
                       (pk/same pat1
                                (optimize-matrix
@@ -164,11 +161,7 @@
                                   (pk1 (cdr (pk1-patterns row)) (pk1-k row)))))]
                      [else (car rows)])))]
     [_
-     (values (lambda (pat2)
-               (when DEBUG-OPT-FAIL
-                 (when (pattern-equal? pat1 pat2)
-                   (eprintf "** cannot factor: ~e\n" (syntax->datum #`#,pat2))))
-               #f)
+     (values (lambda (pat2) #f)
              (lambda (rows)
                ;; (length rows) = 1
                (car rows)))]))
@@ -182,8 +175,6 @@
      (let* ([first-sub (car subpatterns)]
             [rest-subs (cdr subpatterns)])
        (cond [(not (pat:action? first-sub))
-              (when #f ;; DEBUG-OPT-SUCCEED
-                (eprintf ">> unfolding: ~e\n" p))
               (unfold-and first-sub (*append rest-subs onto))]
              [else (values p onto)]))]
     [_ (values p onto)]))
@@ -331,10 +322,10 @@
                 (pattern-equal? (ehpat-head a) (ehpat-head b)))]
           ;; FIXME: more?
           [else #f]))
-  (when DEBUG-OPT-FAIL
-    (when (and (eq? result #f)
-               (equal? (syntax->datum #`#,a) (syntax->datum #`#,b)))
-      (eprintf "** pattern-equal? failed on ~e\n" a)))
+  (when (and (log-level? syntax-parse-logger 'debug)
+             (eq? result #f)
+             (equal? (syntax->datum #`#,a) (syntax->datum #`#,b)))
+    (log-syntax-parse-debug "** pattern-equal? failed on ~e" a))
   result)
 
 (define (equal-iattrs? as bs)
