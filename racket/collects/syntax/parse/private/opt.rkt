@@ -20,17 +20,15 @@
 ;;  - (pk/same pattern Matrix)    -- a submatrix with a common first column factored out
 ;;  - (pk/pair Matrix)            -- a submatrix with pair patterns in the first column unfolded
 ;;  - (pk/and Matrix)             -- a submatrix with and patterns in the first column unfolded
+;;  - (pk/disj (Listof (cons Pattern Matrix)))  -- a submatrix with distinct first patterns
 (struct pk1 (patterns k) #:prefab)
 (struct pk/same (pattern inner) #:prefab)
 (struct pk/pair (inner) #:prefab)
 (struct pk/and (inner) #:prefab)
+(struct pk/disj (inner) #:prefab)
 
-(define (pk-columns pk)
-  (match pk
-    [(pk1 patterns k) (length patterns)]
-    [(pk/same p inner) (add1 (pk-columns inner))]
-    [(pk/pair inner) (sub1 (pk-columns inner))]
-    [(pk/and inner) (sub1 (pk-columns inner))]))
+(define (pk1-car pk) (car (pk1-patterns pk)))
+(define (pk1-cdr pk) (pk1 (cdr (pk1-patterns pk)) (pk1-k pk)))
 
 ;; Can factor pattern P given clauses like
 ;;   [ P P1 ... | e1]     [  | [P1 ... | e1] ]
@@ -150,6 +148,20 @@
                                                 (cdr patterns))
                                          (pk1-k row))))))]
                      [else (car rows)])))]
+    [(? pat:literal?)
+     (values (lambda (p) (pat:literal? p))
+             (lambda (rows)
+               ;; FIXME: do real non-overlapping check / coalesce adjacent same lits
+               (define h (make-hash))
+               (cond [(for/and ([row (in-list rows)])
+                        (define key (syntax-e (pat:literal-id (car (pk1-patterns row)))))
+                        (begin0 (not (hash-ref h key #f))
+                          (hash-set! h key #t)))
+                      (log-syntax-parse-debug "-- got ~s disjoint literals: ~e" (length rows) (hash-keys h))
+                      (pk/disj
+                       (for/list ([row (in-list rows)])
+                         (cons (pk1-car row) (list (pk1-cdr row)))))]
+                     [else rows])))]
     [(? pattern-factorable?)
      (values (lambda (pat2) (pattern-equal? pat1 pat2))
              (lambda (rows)
@@ -418,7 +430,10 @@
     [(pk/pair inner)
      (list 'PAIR (matrix->sexpr inner))]
     [(pk/and inner)
-     (list 'AND (matrix->sexpr inner))]))
+     (list 'AND (matrix->sexpr inner))]
+    [(pk/disj rows)
+     (cons 'DISJ (map (lambda (row) `(IF ,(pattern->sexpr (car row)) ,(matrix->sexpr (cdr row)))) rows))]
+    ))
 (define (pattern->sexpr p)
   (match p
     [(pat:any) '_]

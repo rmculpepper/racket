@@ -516,7 +516,20 @@ Conventions:
              (let ([es* (if (null? datum) (es-add-proper-pair (first-desc:matrix inner) es) es)])
                (fail (failure* pr es*)))))]
     [(parse:pk (in1 . ins) #s(pk/and inner))
-     #'(parse:matrix (in1 in1 . ins) inner)]))
+     #'(parse:matrix (in1 in1 . ins) inner)]
+    [(parse:pk ((x cx pr es) . ins)
+               #s(pk/disj ([#s(pat:literal literal input-phase lit-phase) . inner] ...)))
+     #'(let ([none-match
+              (lambda ()
+                (fail (list (failure* pr (es-add-literal (quote-syntax literal) es)) ...)))])
+         (cond [(not (identifier? x)) (none-match)]
+               [(free-identifier=? x (quote-syntax literal) input-phase lit-phase)
+                (with ([undo-stack (cons (current-state) undo-stack)])
+                  (state-cons! 'literals x)
+                  (parse:matrix ins inner))]
+               ...
+               [else (none-match)]))]
+    ))
 
 (define-syntax (first-desc:matrix stx)
   (syntax-case stx ()
