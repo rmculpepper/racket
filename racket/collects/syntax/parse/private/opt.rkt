@@ -432,9 +432,16 @@
                  (format-symbol "~a:~a" (or name '_) (cadr m)))]
            [else
             (if name (syntax-e name) '_)])]
-    [(? pat:literal?) `(quote ,(syntax->datum (pat:literal-id p)))]
-    [(pat:datum datum) datum]
-    [(? pat:action?) 'ACTION]
+    [(? pat:literal?) `(syntax ,(syntax->datum (pat:literal-id p)))]
+    [(pat:datum datum)
+     (cond [(or (symbol? datum) (pair? datum))
+            `(quote ,datum)]
+           [else datum])]
+    [(pat:action action (pat:any)) '<Action>]
+    [(pat:action action inner) (list '~and '<Action> (pattern->sexpr inner))]
+    [(pat:and patterns) (cons '~and (map pattern->sexpr patterns))]
+    [(pat:or _ patterns _) (cons '~or (map pattern->sexpr patterns))]
+    [(pat:ord pattern _ _) (list '~ord (pattern->sexpr pattern))]
     [(pat:pair head tail)
      (cons (pattern->sexpr head) (pattern->sexpr tail))]
     [(pat:head head tail)
