@@ -148,20 +148,22 @@
                                                 (cdr patterns))
                                          (pk1-k row))))))]
                      [else (car rows)])))]
+    #;
     [(? pat:literal?)
-     (values (lambda (p) (pat:literal? p))
-             (lambda (rows)
+     (define h (make-hash))
+     (values (lambda (p)
                ;; FIXME: do real non-overlapping check / coalesce adjacent same lits
-               (define h (make-hash))
-               (cond [(for/and ([row (in-list rows)])
-                        (define key (syntax-e (pat:literal-id (car (pk1-patterns row)))))
-                        (begin0 (not (hash-ref h key #f))
-                          (hash-set! h key #t)))
+               (and (pat:literal? p)
+                    (let ([key (syntax-e (pat:literal-id p))])
+                      (and (not (hash-has-key? h (syntax-e (pat:literal-id p))))
+                           (begin0 #t (hash-set! h key #t))))))
+             (lambda (rows)
+               (cond [(> (length rows) 1)
                       (log-syntax-parse-debug "-- got ~s disjoint literals: ~e" (length rows) (hash-keys h))
                       (pk/disj
                        (for/list ([row (in-list rows)])
                          (cons (pk1-car row) (list (pk1-cdr row)))))]
-                     [else rows])))]
+                     [else (car rows)])))]
     [(? pattern-factorable?)
      (values (lambda (pat2) (pattern-equal? pat1 pat2))
              (lambda (rows)
