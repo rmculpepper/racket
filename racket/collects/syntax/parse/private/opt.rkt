@@ -1,5 +1,6 @@
 #lang racket/base
-(require racket/syntax
+(require (for-template racket/base)
+         racket/syntax
          racket/pretty
          syntax/parse/private/residual-ct ;; keep abs. path
          "minimatch.rkt"
@@ -550,3 +551,29 @@
     [(ehpat _as hpat repc _cn)
      (if (eq? repc #f) (pattern->sexpr hpat) (list '~REPC (pattern->sexpr hpat)))]
     [_ '<Pattern>]))
+
+;; ============================================================
+
+(define (pattern-size p)
+  (pattern-reduce-left p (lambda (p recur) (+ 1 (recur))) +))
+
+;; Conservative approximation: Returns #t if the expression is
+;; independent of pattern matching: stateless, no references to attrs
+;; bound by pattern, etc.
+(define (inv-expr? e)
+  (cond [(eq? e #f) #t]
+        [(not (syntax? e)) #f]
+        [else
+         (syntax-case e (quote syntax-local-phase-level)
+           [(quote _) #t]
+           [(quote-syntax _) #t]
+           [(syntax-local-phase-level) #t] ;; FIXME: check #%app?
+           [datum
+            (let ([d (syntax-e #'datum)]) (or (number? d) (boolean? d) (string? d)))
+            (free-identifier=? (datum->syntax #'datum '#%datum) #'#%datum)]
+           [_ #f])]))
+
+(define (inv-argu? a)
+  (match a
+    [(arguments pargs kws kwargs)
+     (and (andmap inv-expr? pargs) (andmap inv-expr? kwargs))]))
