@@ -2,12 +2,15 @@
 (require (for-template racket/base)
          racket/syntax
          racket/pretty
+         racket/string
          syntax/parse/private/residual-ct ;; keep abs. path
          "minimatch.rkt"
          "rep-patterns.rkt"
          "kws.rkt")
 (provide (struct-out pk1)
          (rename-out [optimize-matrix0 optimize-matrix]))
+
+(define-logger stxpattern)
 
 ;; ----
 
@@ -71,6 +74,29 @@
 ;; ----
 
 (define (optimize-matrix0 rows)
+
+  (when #t
+    (define ps (for/list ([row (in-list rows)]) (car (pk1-patterns row))))
+    (define propss (map pattern-props ps))
+    (define main-ps (map pattern-main-pattern ps))
+    (define main-propss (map pattern-props main-ps))
+    (log-stxpattern-debug
+     "patterns:\n;! ~s\n~a\n"
+     (list (length rows) (decode-pattern-props (apply bitwise-ior propss)))
+     (string-join
+      (for/list ([p (in-list ps)]
+                 [main-p (in-list main-ps)]
+                 [props (in-list propss)]
+                 [main-props (in-list main-propss)])
+        (define (info p props)
+          `((size ,(pattern-size p)) (attrs ,(length (pattern-attrs p))) ,(decode-pattern-props props)))
+        (format ";@ ~s\n~a"
+                (if (eq? main-p p) (list (info p props)) (list (info main-p main-props) (info p props)))
+                (if #f
+                    (pretty-format (pattern->sexpr p) #:mode 'write)
+                    (format "~s" (pattern->sexpr p)))))
+      "\n")))
+
   (define now (current-inexact-milliseconds))
   (when (and (> (length rows) 1))
     (log-syntax-parse-debug "OPT matrix (~s rows)\n~a" (length rows)
