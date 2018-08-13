@@ -577,3 +577,107 @@
   (match a
     [(arguments pargs kws kwargs)
      (and (andmap inv-expr? pargs) (andmap inv-expr? kwargs))]))
+
+;; ----------------------------------------
+;; Abstract matching
+
+;; An AbsMatch is a bitvector encoding of *sets* of AbsValue,
+;; where AbsValue ::= null | identifier | keyword | other | (cons AbsValue _).
+;; Note: positive numbers encode finite sets; negative encode cofinite sets.
+
+;; The AbsMatch of a pattern represents an upper bound on the terms the pattern
+;; can accept. Since it is an upper bound only, the complement is always AM-ALL.
+
+(define AM-NULL  (bit 0))
+(define AM-ID    (bit 1))
+(define AM-KW    (bit 2))
+(define AM-OTHER (bit 3))
+(define AM-ALL   -1)
+(define (AM-cons a) (arithmetic-shift a 4))
+(define (AM-car a)  (arithmetic-shift a -4))
+(define AM-PAIR-ALL (AM-cons AM-ALL))
+
+(define (AM-and . xs) (apply bitwise-and xs))
+(define (AM-or  . xs) (apply bitwise-ior xs))
+(define (AM-andmap f xs)
+  (for/fold ([acc -1]) ([x (in-list xs)]) (bitwise-and acc (f x))))
+(define (AM-ormap f xs)
+  (for/fold ([acc 0]) ([x (in-list xs)]) (bitwise-ior acc (f x))))
+
+(define (AM-overlap? x y) (not (zero? (bitwise-and x y))))
+
+(define (AM->list a)
+  (cond [(= a  0) '()]
+        [(= a -1) '(ALL)]
+        [else (append (if (AM-overlap? a AM-NULL) '(null) '())
+                      (if (AM-overlap? a AM-ID)   '(id)   '())
+                      (if (AM-overlap? a AM-KW)   '(kw)   '())
+                      (if (AM-overlap? a AM-OTHER) '(other) '())
+                      (for/list ([x (in-list (AM->list (AM-car a)))])
+                        `(cons ,x _)))]))
+
+;; pattern-AM : *Pattern -> AbstractMatch
+(define (pattern-AM p)
+  (define ior bitwise-ior)
+  (match p
+    ;; -- S patterns
+    [(pat:any) AM-ALL]
+    [(pat:svar name) AM-ALL]
+    [(pat:var/p name parser argu nested-attrs role opts) AM-ALL]
+    [(pat:literal id input-phase lit-phase) AM-ID]
+    [(pat:datum datum)
+     (let loop ([x datum])
+       (cond [(pair? x) (AM-cons (loop (car x)))]
+             [(null? x) AM-NULL]
+             [(symbol? x) AM-ID]
+             [(keyword? x) AM-KW]
+             [else AM-OTHER]))]
+    [(pat:action ap sp) (pattern-AM sp)]
+    [(pat:head headp tailp)
+     (define headam (pattern-AM headp))
+     (if (AM-overlap? headam AM-NULL)
+         (AM-or headam (pattern-AM tailp))
+         headam)]
+    [(pat:dots heads tailp)
+     (AM-or (AM-ormap pattern-AM heads) (pattern-AM tailp))]
+    [(pat:andu ps) (AM-andmap pattern-AM ps)]
+    [(pat:and ps) (AM-andmap pattern-AM ps)]
+    [(pat:or attrs ps attrss) (AM-ormap pattern-AM ps)]
+    [(pat:not sp) AM-ALL]
+    [(pat:pair headp tailp) (AM-cons (pattern-AM headp))]
+    [(pat:vector sp) AM-OTHER]
+    [(pat:box sp) AM-OTHER]
+    [(pat:pstruct key sp) AM-OTHER]
+    [(pat:describe sp description transparent? role) (pattern-AM sp)]
+    [(pat:delimit sp) (pattern-AM sp)]
+    [(pat:commit sp) (pattern-AM sp)]
+    [(pat:reflect obj argu attr-decls name nested-attrs) AM-ALL]
+    [(pat:ord sp group index) (pattern-AM sp)]
+    [(pat:post sp) (pattern-AM sp)]
+    [(pat:integrated name predicate description role)
+     ;; FIXME: relies on contents from lib.rkt
+     (cond [(equal? description "identifier") AM-ID]
+           [(equal? description "keyword") AM-KW]
+           [(equal? description "expression") (bitwise-xor AM-ALL AM-KW)]
+           [else AM-OTHER])]
+    [(pat:fixup stx bind varname scname argu sep role parser*) AM-ALL]
+    [(pat:and/fixup stx ps) (AM-andmap pattern-AM ps)]
+    [(pat:seq-end) AM-NULL] ;; Should only occur in ListPattern!
+    [(? action-pattern?) 0]
+    ;; For head pattern, represents list of matched terms.
+    [(hpat:single sp) (AM-cons (pattern-AM sp))]
+    [(hpat:var/p name parser argu nested-attrs role scopts) AM-ALL]
+    [(hpat:seq sp) (pattern-AM sp)]
+    [(hpat:action ap sp) (pattern-AM sp)]
+    [(hpat:andu ps) (AM-andmap pattern-AM ps)]
+    [(hpat:and hp sp) (AM-and (pattern-AM hp) (pattern-AM sp))]
+    [(hpat:or attrs ps attrss) (AM-ormap pattern-AM ps)]
+    [(hpat:describe sp description transparent? role) (pattern-AM sp)]
+    [(hpat:delimit sp) (pattern-AM sp)]
+    [(hpat:commit sp) (pattern-AM sp)]
+    [(hpat:reflect obj argu attr-decls name nested-attrs) AM-ALL]
+    [(hpat:ord sp group index) (pattern-AM sp)]
+    [(hpat:post sp) (pattern-AM sp)]
+    [(hpat:peek sp) AM-NULL]
+    [(hpat:peek-not sp) AM-NULL]
+    [(ehpat _ hp repc _) (pattern-AM hp)]))
