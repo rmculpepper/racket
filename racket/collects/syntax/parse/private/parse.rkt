@@ -713,6 +713,12 @@ Conventions:
                   (let-attributes (name-attr ...) k)
                   (let ([es* (es-add-thing pr 'description #t role es)])
                     (fail (failure* pr es*))))))]
+       [#s(pat:simple (attr ...) simple)
+        (with-syntax ([(attr ...) (reverse (syntax->list #'(attr ...)))])
+          #'(let ([r (simple-parse 'simple x cx pr es null)])
+              (if (or (pair? r) (null? r))
+                  (let/unpack ((attr ...) r) k)
+                  (fail r))))]
        [_ (wrong-syntax stx "internal error: bad S pattern: ~e" #'pattern0)])]))
 
 ;; (first-desc:S S-pattern) : expr[FirstDesc]

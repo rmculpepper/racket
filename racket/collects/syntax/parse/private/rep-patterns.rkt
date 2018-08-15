@@ -147,6 +147,12 @@
 ;; + (pat:seq-end)
 
 ;; ------------------------------------------------------------
+;; Stage 6: Recognize simple patterns
+
+;; SinglePattern ::= ...
+;; + (pat:simple IAttrs Simple)     -- Simple defined in residual.rkt
+
+;; ------------------------------------------------------------
 
 (define-struct pat:any () #:prefab)
 (define-struct pat:svar (name) #:prefab)
@@ -174,6 +180,7 @@
 (define-struct pat:fixup (stx bind varname scname argu sep role parser*) #:prefab)
 (define-struct pat:and/fixup (stx patterns) #:prefab)
 (define-struct pat:seq-end () #:prefab)
+(define-struct pat:simple (attrs simple) #:prefab)
 
 (define-struct action:cut () #:prefab)
 (define-struct action:fail (when message) #:prefab)
@@ -234,7 +241,8 @@
       (pat:integrated? x)
       (pat:fixup? x)
       (pat:and/fixup? x)
-      (pat:seq-end? x)))
+      (pat:seq-end? x)
+      (pat:simple? x)))
 
 (define (action-pattern? x)
   (or (action:cut? x)
@@ -308,6 +316,7 @@
     [(pat:fixup stx bind varname scname argu sep role parser*) #t]
     [(pat:and/fixup stx ps) (andmap wf-A/S/H? ps)]
     [(pat:seq-end) #f] ;; Should only occur in ListPattern!
+    [(pat:simple attrs simple) #t]
     [_ #f]))
 
 (define (wf-L? x)
@@ -438,6 +447,8 @@
        (if name (list (attr name 0 #t)) null)]
       [(pat:fixup _ bind _ _ _ _ _ _)
        (if bind (list (attr bind 0 #t)) null)]
+      [(pat:simple attrs _)
+       attrs]
       ;; -- A patterns
       [(action:bind attr expr)
        (list attr)]
@@ -581,6 +592,7 @@
           [(pat:reflect? p) AF-ANY]
           [(pat:post? p) (if (AF-nz? (pattern-AF (pat:post-pattern p))) AF-POST AF-NONE)]
           [(pat:integrated? p) AF-SUB]
+          [(pat:simple? p) AF-SUB]
           [(action:fail? p) AF-SUB]
           [(action:parse? p) (if (AF-nz? (pattern-AF (action:parse-pattern p))) AF-SUB AF-NONE)]
           [(action:ord? p) (pattern-AF (action:ord-pattern p))]

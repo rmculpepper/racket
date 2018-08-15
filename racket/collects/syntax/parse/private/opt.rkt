@@ -82,7 +82,70 @@
           [else
            (log-syntax-parse-debug "OPT ==> (~s ms)\n~a" (floor (- then now))
                                    (pretty-format (matrix->sexpr result) #:mode 'print))]))
-  result)
+
+  (optimize-pattern result))
+
+;; ----------------------------------------
+
+(require (submod "residual.rkt" simple))
+
+(provide optimize-pattern)
+
+(define (optimize-pattern p)
+
+  (define simple-size-table (make-hasheq))
+  (define (size p) (hash-ref simple-size-table p 0))
+  (let ()
+    (define (record-size! p size)
+      (hash-set! simple-size-table p size))
+    (define (for-pattern p recur)
+      (recur)
+      (match p
+        [(pat:any) (record-size! p 1)]
+        [(pat:svar _) (record-size! p 1)]
+        [(pat:datum '()) (record-size! p 1)]
+        [(pat:integrated _ parser desc _)
+         (when (member desc '("identifier" "expression" "keyword"))
+           (record-size! p 1))]
+        [(pat:pair hp tp)
+         (when (and (> (size hp) 0) (> (size tp) 0))
+           (record-size! p (+ (size hp) (size tp))))]
+        [(pat:dots (list (ehpat _ (hpat:single hp) '#f _)) (pat:datum '()))
+         (when (> (size hp) 0)
+           (record-size! p (+ (size hp) 2)))]
+        [_ (void)]))
+    (pattern-reduce-left p for-pattern void))
+
+  ;; ordering of pattern-attrs might not be consistent w/ simple-parse
+  (define (get-attrs p)
+    (match p
+      [(pat:pair hp tp) (append (get-attrs hp) (get-attrs tp))]
+      [(pat:dots (list (ehpat attrs (hpat:single hp) '#f _)) (pat:datum '()))
+       (repc-adjust-attrs (get-attrs hp) #f)]
+      [_ (pattern-attrs p)]))
+
+  (define (convert-pattern p)
+    (match p
+      [(pat:any) (sp:triv #f 'any)]
+      [(pat:svar name) (sp:triv #t 'any)]
+      [(pat:datum '()) '()]
+      [(pat:integrated name _ '"identifier" _) (sp:triv (identifier? name) 'id)]
+      [(pat:integrated name _ '"keyword"    _) (sp:triv (identifier? name) 'kw)]
+      [(pat:integrated name _ '"expression" _) (sp:triv (identifier? name) 'expr)]
+      [(pat:pair hp tp) (cons (convert-pattern hp) (convert-pattern tp))]
+      [(pat:dots (list (ehpat attrs (hpat:single hp) '#f _)) (pat:datum '()))
+       (sp:dots (length attrs) (convert-pattern hp))]))
+
+  (define (for-pattern p recur)
+    (cond [(> (size p) 2)
+           (when #t
+             (log-syntax-parse-debug "simple: ~v" (pattern->sexpr p)))
+           (pat:simple (get-attrs p) (convert-pattern p))]
+          [else (recur)]))
+
+  (pattern-transform-preorder p for-pattern))
+
+;; ----------------------------------------
 
 ;; optimize-matrix : (listof pk1) -> Matrix
 (define (optimize-matrix rows)

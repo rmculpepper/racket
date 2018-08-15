@@ -1,5 +1,6 @@
 #lang racket/base
 (require (for-syntax racket/base)
+         racket/list
          racket/stxparam
          racket/lazy-require
          racket/private/promise)
@@ -224,23 +225,162 @@
   (let ([elems (stx->list x)])
     (if (and elems (list? elems) (andmap pred? elems))
         (values 'ok elems)
-        (let loop ([x x] [cx cx] [i 0])
-          (cond [(syntax? x)
-                 (loop (syntax-e x) x i)]
-                [(pair? x)
-                 (if (pred? (car x))
-                     (loop (cdr x) cx (add1 i))
-                     (let* ([pr (ps-add-cdr pr i)]
-                            [pr (ps-add-car pr)]
-                            [es (es-add-thing pr desc #t rl es)])
-                       (values 'fail (failure pr es))))]
-                [else ;; not null, because stx->list failed
-                 (let ([pr (ps-add-cdr pr i)]
-                       #|
-                       ;; Don't extend es! That way we don't get spurious "expected ()"
-                       ;; that *should* have been cancelled out by ineffable pair failures.
-                       |#)
-                   (values 'fail (failure* pr es)))])))))
+        (values 'fail (predicate-ellipsis-fail x cx pr es pred? desc)))))
+
+(define (predicate-ellipsis-fail x cx pr es pred? desc)
+  (let loop ([x x] [cx cx] [i 0])
+    (cond [(syntax? x)
+           (loop (syntax-e x) x i)]
+          [(pair? x)
+           (if (pred? (car x))
+               (loop (cdr x) cx (add1 i))
+               (fail:nth-thing pr es i desc))]
+          [else
+           (let ([pr (ps-add-cdr pr i)]
+                 #|
+                 ;; Don't extend es! That way we don't get spurious "expected ()"
+                 ;; that *should* have been cancelled out by ineffable pair failures.
+                 |#)
+             (failure* pr es))])))
+
+;; ----
+
+(provide (struct-out sp:triv)
+         (struct-out sp:dots)
+         simple-parse)
+
+;; A Trivial is one of '_ | 'any | 'id | 'kw | 'expr
+
+(define ((trivial:predicate triv) x)
+  (define d (if (syntax? x) (syntax-e x) x))
+  (case triv
+    [(any _) #t]
+    [(id) (symbol? d)]
+    [(kw) (keyword? d)]
+    [(expr) (not (keyword? d))]
+    [else #f]))
+
+(define (trivial:desc triv)
+  (case triv
+    [(any _) #f]
+    [(id) "identifier"]
+    [(kw) "keyword"]
+    [(expr) "expression"]))
+
+(define (trivial:first-desc triv)
+  (case triv
+    [(any _) '(any)]
+    [(id) "identifier"]
+    [(kw) "keyword"]
+    [(expr) "expression"]))
+
+(module simple racket/base
+  (provide (all-defined-out))
+  ;; A Simple is one of
+  ;; - (cons Simple Simple)
+  ;; - '()
+  ;; - (sp:dots Nat Simple)
+  ;; - (sp:triv Boolean Trivial)
+  (struct sp:dots (attr-count elem) #:prefab)
+  (struct sp:triv (bind? triv) #:prefab))
+(require (submod "." simple))
+
+(define (simple:first-desc s)
+  (cond [(sp:triv? s) (trivial:first-desc (sp:triv-triv s))]
+        [else #f]))
+
+;; simple-parse : Simple Stx Syntax Progress ExpectStack -> (U List Failure)
+;; Interpreter for simple patterns.
+;; Optimizations:
+;; - avoid/delay allocating intermediate progress
+;; - specialize (sp:dots (sp:triv _))
+(define (simple-parse simple x cx pr-base es init-acc)
+  ;; bind : (U List Failure) (-> List (U List Failure) -> (U List Failure)
+  (define (bind c f) (if (or (null? c) (pair? c)) (f c) c))
+  (define (match-car simple x cx i acc)
+    ;; progress is (ps-add-car (ps-add-cdr pr-base i))
+    (cond [(sp:triv? simple)
+           (match-trivial (sp:triv-triv simple) (sp:triv-bind? simple) x cx i #t acc)]
+          [else (simple-parse simple x cx (ps-add-car (ps-add-cdr pr-base i)) es acc)]))
+  (define (match-trivial triv bind? x cx i car? acc)
+    ;; progress is (let ([pr (ps-add-cdr pr-base i)]) (if car? (ps-add-car pr) pr))
+    (define d (if (syntax? x) (syntax-e x) x))
+    (cond [((trivial:predicate triv) d)
+           (if bind? (cons (datum->syntax cx x) acc) acc)]
+          [else
+           (let* ([pr (ps-add-cdr pr-base i)]
+                  [pr (if car? (ps-add-car pr) pr)]
+                  [es (es-add-thing pr (trivial:desc triv) #t #f es)])
+             (failure* pr es))]))
+  (define (loop simple x cx i acc)
+    ;; progress is (ps-add-cdr pr-base i)
+    (cond [(pair? simple)
+           (define head (car simple))
+           (define tail (cdr simple))
+           (let ([x (if (syntax? x) (syntax-e x) x)] [cx (if (syntax? x) x cx)])
+             (cond [(pair? x)
+                    (bind (match-car head (car x) cx i acc)
+                          (lambda (acc) (loop tail (cdr x) cx (add1 i) acc)))]
+                   [else
+                    (define fdesc (and (null? x) (simple:first-desc head)))
+                    (fail:nth-pair pr-base es i fdesc (null? x))]))]
+          [(sp:triv? simple)
+           (match-trivial (sp:triv-triv simple) (sp:triv-bind? simple) x cx i #f acc)]
+          [(null? simple)
+           (cond [(or (null? x) (and (syntax? x) (null? (syntax-e x))))
+                  acc]
+                 [else
+                  (let ([pr (ps-add-cdr pr-base i)]
+                        [es (es-add-atom '() es)])
+                    (failure* pr es))])]
+          [(sp:dots? simple)
+           (define elem (sp:dots-elem simple))
+           (cond [(sp:triv? elem)
+                  (define pred (trivial:predicate (sp:triv-triv elem)))
+                  (define xs (stx->list x))
+                  (cond [(and xs (list? xs) (andmap pred xs))
+                         (if (sp:triv-bind? elem)
+                             (cons xs acc)
+                             acc)]
+                        [else
+                         (define pr (ps-add-cdr pr-base i))
+                         (define desc (trivial:desc (sp:triv-triv elem)))
+                         (predicate-ellipsis-fail x cx pr es pred desc)])]
+                 [else
+                  (let loop ([x x] [cx cx] [i i] [dots-acc null])
+                    (let ([x (if (syntax? x) (syntax-e x) x)] [cx (if (syntax? x) x cx)])
+                      (cond [(pair? x)
+                             (bind (match-car elem (car x) cx i null)
+                                   (lambda (m) (loop (cdr x) cx (add1 i) (cons m dots-acc))))]
+                            [(null? x)
+                             (define attr-count (sp:dots-attr-count simple))
+                             (append (group-matches attr-count dots-acc) acc)]
+                            [else (failure* (ps-add-cdr pr-base i) es)])))])]
+          [else (error 'simple-parse "bad: ~e" simple)]))
+  (loop simple x cx 0 init-acc))
+
+(define (group-matches n xss)
+  (cond [(= n 0) null]
+        [(= n 1)
+         (list (reverse (map car xss)))]
+        [(= n 2)
+         (list (reverse (map car xss))
+               (reverse (map cadr xss)))]
+        [else
+         (for/fold ([acc (make-list n null)]) ([xs (in-list xss)])
+           (map cons xs acc))]))
+
+(define (fail:nth-thing pr es n desc)
+  (let* ([pr (ps-add-car (ps-add-cdr pr n))]
+         [es (if (string? desc) (es-add-thing pr desc #t #f es) es)])
+    (failure* pr es)))
+
+(define (fail:nth-pair pr es n fdesc null-term?)
+  (let ([pr (ps-add-cdr pr n)]
+        [es (if null-term? (es-add-proper-pair fdesc es) es)])
+    (failure* pr es)))
+
+;; ----
 
 (provide illegal-cut-error)
 
