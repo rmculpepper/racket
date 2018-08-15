@@ -25,6 +25,15 @@
 (struct pk/pair (inner) #:prefab)
 (struct pk/and (inner) #:prefab)
 
+(define (matrix-subpatterns m)
+  (apply append (map pk-subpatterns m)))
+(define (pk-subpatterns pk)
+  (match pk
+    [(pk1 patterns k) patterns]
+    [(pk/same pattern inner) (cons pattern (matrix-subpatterns inner))]
+    [(pk/pair inner) (matrix-subpatterns inner)]
+    [(pk/and inner) (matrix-subpatterns inner)]))
+
 (define (pk-columns pk)
   (match pk
     [(pk1 patterns k) (length patterns)]
@@ -109,6 +118,15 @@
           [else
            (log-syntax-parse-debug "OPT ==> (~s ms)\n~a" (floor (- then now))
                                    (pretty-format (matrix->sexpr result) #:mode 'print))]))
+
+  (when #t
+    (define ps (matrix-subpatterns result))
+    (log-stxpattern-debug
+     "matrix subpatterns: ~s\n~a\n" (length ps)
+     (string-join
+      (for/list ([p (in-list ps)])
+        (format "~v" (pattern->sexpr p)))
+      "\n")))
 
   (optimize-pattern result))
 
