@@ -5,6 +5,7 @@
          racket/string
          syntax/parse/private/residual-ct ;; keep abs. path
          "minimatch.rkt"
+         "tree-util.rkt"
          "rep-patterns.rkt"
          "kws.rkt")
 (provide (struct-out pk1)
@@ -125,6 +126,24 @@
      "matrix subpatterns: ~s\n~a\n" (length ps)
      (string-join
       (for/list ([p (in-list ps)])
+        (format "~v" (pattern->sexpr p)))
+      "\n")))
+
+  (when #t
+    (define (desyntaxify x)
+      (define (for-node x) (if (syntax? x) (syntax->datum x) x))
+      (tree-transform x for-node))
+    (define (pattern-simple-dot-heads p)
+      (define (for-pattern p recur)
+        (match p
+          [(pat:dots (list (ehpat _ (hpat:single sp) '#f _)) tail)
+           (cons sp (recur))]
+          [_ (recur)]))
+      (pattern-reduce p for-pattern append))
+    (log-stxpattern-debug
+     "dots subpatterns:\n~a\n"
+     (string-join
+      (for/list ([p (in-list (pattern-simple-dot-heads (matrix-subpatterns result)))])
         (format "~v" (pattern->sexpr p)))
       "\n")))
 
