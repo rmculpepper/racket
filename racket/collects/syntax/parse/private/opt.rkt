@@ -124,12 +124,15 @@
     (define ps (matrix-subpatterns result))
     (log-stxpattern-debug
      "matrix subpatterns: ~s\n~a\n" (length ps)
-     (string-join
-      (for/list ([p (in-list ps)])
-        (format "~v" (pattern->sexpr p)))
-      "\n")))
+     (parameterize ((current-pvar->symbol (lambda (s) 'x))
+                    (current-stxclass-parser->symbol (lambda (s) 'sc))
+                    (current-literal->symbol (lambda (s) 'literal)))
+       (string-join
+        (for/list ([p (in-list ps)])
+          (format "~v" (pattern->sexpr p)))
+        "\n"))))
 
-  (when #t
+  (when #f
     (define (desyntaxify x)
       (define (for-node x) (if (syntax? x) (syntax->datum x) x))
       (tree-transform x for-node))
@@ -532,6 +535,22 @@
 
 ;; ----
 
+(define current-pvar->symbol
+  (make-parameter (lambda (s) (if (identifier? s) (syntax-e s) s))))
+(define current-stxclass-parser->symbol
+  (make-parameter (lambda (p)
+                    (cond [(regexp-match #rx"^parse-(.*)$" (symbol->string (syntax-e p)))
+                           => (lambda (m) (string->symbol (cadr m)))]
+                          [else "??"]))))
+(define current-literal->symbol
+  (make-parameter (lambda (s) (if (identifier? s) (syntax-e s) s))))
+(define (pvar->symbol s)
+  (cond [(or (symbol? s) (identifier? s)) ((current-pvar->symbol) s)]
+        [else '_]))
+(define (stxclass-parser->symbol s)
+  ((current-stxclass-parser->symbol) s))
+(define (literal->symbol s)
+  ((current-literal->symbol) s))
 (define (matrix->sexpr rows)
   (cond [(null? rows) ;; shouldn't happen
          '(FAIL)]
@@ -553,16 +572,15 @@
   (match p
     [(pat:any) '_]
     [(pat:integrated name pred desc _)
-     (format-symbol "~a:~a" (or name '_) desc)]
+     (format-symbol "~a:~a" (pvar->symbol name) desc)]
     [(pat:svar name)
-     (syntax-e name)]
+     (pvar->symbol name)]
     [(pat:var/p name parser _ _ _ _)
-     (cond [(and parser (regexp-match #rx"^parse-(.*)$" (symbol->string (syntax-e parser))))
-            => (lambda (m)
-                 (format-symbol "~a:~a" (or name '_) (cadr m)))]
-           [else
-            (if name (syntax-e name) '_)])]
-    [(? pat:literal?) `(syntax ,(syntax->datum (pat:literal-id p)))]
+     (cond [(and parser (stxclass-parser->symbol parser))
+            => (lambda (scname) (format-symbol "~a:~a" (pvar->symbol name) scname))]
+           [else (pvar->symbol name)])]
+    [(? pat:literal?)
+     `(syntax ,(literal->symbol (pat:literal-id p)))]
     [(pat:datum datum)
      (cond [(or (symbol? datum) (pair? datum))
             `(quote ,datum)]
@@ -597,9 +615,9 @@
     [(action:post ap) (list '~post (pattern->sexpr ap))]
     [(hpat:single sp) (pattern->sexpr sp)]
     [(hpat:var/p name parser _ _ _ _)
-     (cond [(and parser (regexp-match #rx"^parser-(.*)$" (symbol->string (syntax-e parser))))
-            => (lambda (m) (format-symbol "~a:~a" (or name '_) (cadr m)))]
-           [else (if name (syntax-e name) '_)])]
+     (cond [(and parser (stxclass-parser->symbol parser))
+            => (lambda (scname) (format-symbol "~a:~a" (pvar->symbol name) scname))]
+           [else (pvar->symbol name)])]
     [(hpat:seq lp) (cons '~seq (pattern->sexpr lp))]
     [(hpat:action ap hp) (list '~AAND (pattern->sexpr ap) (pattern->sexpr hp))]
     [(hpat:and hp sp) (list '~and (pattern->sexpr hp) (pattern->sexpr sp))]
