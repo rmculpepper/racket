@@ -93,6 +93,16 @@
 
 (define (optimize-pattern p)
 
+  (define (simple-literal-pattern? p)
+    (define (ok-phase-expr? e)
+      (syntax-case e (quote syntax-local-phase-level)
+        [(syntax-local-phase-level) #t]
+        [_ #f]))
+    (match p
+      [(pat:literal lit-id input-phase literal-phase)
+       (and (ok-phase-expr? input-phase) (ok-phase-expr? literal-phase))]
+      [else #f]))
+
   (define simple-size-table (make-hasheq))
   (define (size p) (hash-ref simple-size-table p 0))
   (let ()
@@ -113,6 +123,10 @@
         [(pat:dots (list (ehpat _ (hpat:single hp) '#f _)) (pat:datum '()))
          (when (> (size hp) 0)
            (record-size! p (+ (size hp) 2)))]
+        [(pat:and (list (pat:svar name) (? simple-literal-pattern?)))
+         (record-size! p 1)]
+        [(? simple-literal-pattern?)
+         (record-size! p 1)]
         [_ (void)]))
     (pattern-reduce-left p for-pattern void))
 
@@ -125,22 +139,41 @@
       [_ (pattern-attrs p)]))
 
   (define (convert-pattern p)
-    (match p
-      [(pat:any) (sp:triv #f 'any)]
-      [(pat:svar name) (sp:triv #t 'any)]
-      [(pat:datum '()) '()]
-      [(pat:integrated name _ '"identifier" _) (sp:triv (identifier? name) 'id)]
-      [(pat:integrated name _ '"keyword"    _) (sp:triv (identifier? name) 'kw)]
-      [(pat:integrated name _ '"expression" _) (sp:triv (identifier? name) 'expr)]
-      [(pat:pair hp tp) (cons (convert-pattern hp) (convert-pattern tp))]
-      [(pat:dots (list (ehpat attrs (hpat:single hp) '#f _)) (pat:datum '()))
-       (sp:dots (length attrs) (convert-pattern hp))]))
+    (define bind-counter 0) ;; mutated!
+    (define literals null) ;; mutated!
+    (define (next-bind-index)
+      (begin0 bind-counter (set! bind-counter (add1 bind-counter))))
+    (define (loop p)
+      (match p
+        [(pat:any) (sp:triv #f 'any)]
+        [(pat:svar name) (sp:triv (next-bind-index) 'any)]
+        [(pat:datum '()) '()]
+        [(pat:integrated name _ desc _)
+         (sp:triv (and (identifier? name) (next-bind-index))
+                  (match desc
+                    ['"identifier" 'id]
+                    ['"keyword"    'kw]
+                    ['"expression" 'expr]))]
+        [(pat:pair hp tp) (cons (loop hp) (loop tp))]
+        [(pat:dots (list (ehpat attrs (hpat:single hp) '#f _)) (pat:datum '()))
+         (sp:dots (length attrs) (loop hp))]
+        [(pat:and (list (pat:svar name) (pat:literal lit-id _ _)))
+         (define index (length literals))
+         (set! literals (cons lit-id literals))
+         (sp:lit (next-bind-index) index)]
+        [(pat:literal lit-id _ _)
+         (define index (length literals))
+         (set! literals (cons lit-id literals))
+         (sp:lit #f index)]))
+    (define simple (loop p))
+    (values simple (reverse literals)))
 
   (define (for-pattern p recur)
     (cond [(> (size p) 2)
            (when #t
              (log-syntax-parse-debug "simple: ~v" (pattern->sexpr p)))
-           (pat:simple (get-attrs p) (convert-pattern p))]
+           (define-values (simple literals) (convert-pattern p))
+           (pat:simple (get-attrs p) simple literals)]
           [else (recur)]))
 
   (pattern-transform-preorder p for-pattern))

@@ -247,6 +247,7 @@
 
 (provide (struct-out sp:triv)
          (struct-out sp:dots)
+         (struct-out sp:lit)
          simple-parse)
 
 ;; A Trivial is one of '_ | 'any | 'id | 'kw | 'expr
@@ -280,84 +281,107 @@
   ;; - (cons Simple Simple)
   ;; - '()
   ;; - (sp:dots Nat Simple)
-  ;; - (sp:triv Boolean Trivial)
+  ;; - (sp:triv Nat/#f Trivial)
+  ;; - (sp:lit Nat/#f Nat)
   (struct sp:dots (attr-count elem) #:prefab)
-  (struct sp:triv (bind? triv) #:prefab))
+  (struct sp:triv (bind-index triv) #:prefab)
+  (struct sp:lit (bind-index lit-index) #:prefab))
 (require (submod "." simple))
 
 (define (simple:first-desc s)
   (cond [(sp:triv? s) (trivial:first-desc (sp:triv-triv s))]
         [else #f]))
 
-;; simple-parse : Simple Stx Syntax Progress ExpectStack -> (U List Failure)
+;; simple-parse : Simple Stx Syntax Progress ExpectStack
+;;                (U (SyntaxVectorOf Identifier) #f)
+;;             -> (U List Failure)
 ;; Interpreter for simple patterns.
 ;; Optimizations:
 ;; - avoid/delay allocating intermediate progress
 ;; - specialize (sp:dots (sp:triv _))
-(define (simple-parse simple x cx pr-base es init-acc)
+(define (simple-parse simple x cx pr-base es litv)
   ;; bind : (U List Failure) (-> List (U List Failure) -> (U List Failure)
   (define (bind c f) (if (or (null? c) (pair? c)) (f c) c))
-  (define (match-car simple x cx i acc)
-    ;; progress is (ps-add-car (ps-add-cdr pr-base i))
-    (cond [(sp:triv? simple)
-           (match-trivial (sp:triv-triv simple) (sp:triv-bind? simple) x cx i #t acc)]
-          [else (simple-parse simple x cx (ps-add-car (ps-add-cdr pr-base i)) es acc)]))
-  (define (match-trivial triv bind? x cx i car? acc)
-    ;; progress is (let ([pr (ps-add-cdr pr-base i)]) (if car? (ps-add-car pr) pr))
-    (define d (if (syntax? x) (syntax-e x) x))
-    (cond [((trivial:predicate triv) d)
-           (if bind? (cons (datum->syntax cx x) acc) acc)]
-          [else
-           (let* ([pr (ps-add-cdr pr-base i)]
-                  [pr (if car? (ps-add-car pr) pr)]
-                  [es (es-add-thing pr (trivial:desc triv) #t #f es)])
-             (failure* pr es))]))
-  (define (loop simple x cx i acc)
-    ;; progress is (ps-add-cdr pr-base i)
-    (cond [(pair? simple)
-           (define head (car simple))
-           (define tail (cdr simple))
-           (let ([x (if (syntax? x) (syntax-e x) x)] [cx (if (syntax? x) x cx)])
-             (cond [(pair? x)
-                    (bind (match-car head (car x) cx i acc)
-                          (lambda (acc) (loop tail (cdr x) cx (add1 i) acc)))]
+  ;; matched-literals : (Listof Identifier)
+  (define matched-literals null) ;; mutated!
+  ;; outerloop (shares es, litv, matched-literals; pr-base varies)
+  (define (outerloop simple x cx pr-base i acc)
+    (define (match-car simple x cx i acc)
+      ;; progress is (ps-add-car (ps-add-cdr pr-base i))
+      (cond [(sp:triv? simple)
+             (match-trivial (sp:triv-triv simple) (sp:triv-bind-index simple) x cx i #t acc)]
+            [else (outerloop simple x cx (ps-add-car (ps-add-cdr pr-base i)) 0 acc)]))
+    (define (match-trivial triv bind? x cx i car? acc)
+      ;; progress is (let ([pr (ps-add-cdr pr-base i)]) (if car? (ps-add-car pr) pr))
+      (define d (if (syntax? x) (syntax-e x) x))
+      (cond [((trivial:predicate triv) d)
+             (if bind? (cons (datum->syntax cx x) acc) acc)]
+            [else
+             (let* ([pr (ps-add-cdr pr-base i)]
+                    [pr (if car? (ps-add-car pr) pr)]
+                    [es (es-add-thing pr (trivial:desc triv) #t #f es)])
+               (failure* pr es))]))
+    (define (match-literal simple x cx i car? acc)
+      (define lit-id (vector-ref (syntax-e litv) (sp:lit-lit-index simple)))
+      (define bind? (sp:lit-bind-index simple))
+      (if (and (identifier? x) (free-identifier=? x lit-id))
+          (begin
+            (set! matched-literals (cons x matched-literals))
+            (if bind? (cons x acc) acc))
+          (let* ([pr (ps-add-cdr pr-base i)]
+                 [pr (if car? (ps-add-car pr) pr)]
+                 [es (es-add-literal lit-id es)])
+            (failure* pr es))))
+    (define (loop simple x cx i acc)
+      ;; progress is (ps-add-cdr pr-base i)
+      (cond [(pair? simple)
+             (define head (car simple))
+             (define tail (cdr simple))
+             (let ([x (if (syntax? x) (syntax-e x) x)] [cx (if (syntax? x) x cx)])
+               (cond [(pair? x)
+                      (bind (match-car head (car x) cx i acc)
+                            (lambda (acc) (loop tail (cdr x) cx (add1 i) acc)))]
+                     [else
+                      (define fdesc (and (null? x) (simple:first-desc head)))
+                      (fail:nth-pair pr-base es i fdesc (null? x))]))]
+            [(sp:triv? simple)
+             (match-trivial (sp:triv-triv simple) (sp:triv-bind-index simple) x cx i #f acc)]
+            [(null? simple)
+             (cond [(or (null? x) (and (syntax? x) (null? (syntax-e x))))
+                    acc]
                    [else
-                    (define fdesc (and (null? x) (simple:first-desc head)))
-                    (fail:nth-pair pr-base es i fdesc (null? x))]))]
-          [(sp:triv? simple)
-           (match-trivial (sp:triv-triv simple) (sp:triv-bind? simple) x cx i #f acc)]
-          [(null? simple)
-           (cond [(or (null? x) (and (syntax? x) (null? (syntax-e x))))
-                  acc]
-                 [else
-                  (let ([pr (ps-add-cdr pr-base i)]
-                        [es (es-add-atom '() es)])
-                    (failure* pr es))])]
-          [(sp:dots? simple)
-           (define elem (sp:dots-elem simple))
-           (cond [(sp:triv? elem)
-                  (define pred (trivial:predicate (sp:triv-triv elem)))
-                  (define xs (stx->list x))
-                  (cond [(and xs (list? xs) (andmap pred xs))
-                         (if (sp:triv-bind? elem)
-                             (cons xs acc)
-                             acc)]
-                        [else
-                         (define pr (ps-add-cdr pr-base i))
-                         (define desc (trivial:desc (sp:triv-triv elem)))
-                         (predicate-ellipsis-fail x cx pr es pred desc)])]
-                 [else
-                  (let loop ([x x] [cx cx] [i i] [dots-acc null])
-                    (let ([x (if (syntax? x) (syntax-e x) x)] [cx (if (syntax? x) x cx)])
-                      (cond [(pair? x)
-                             (bind (match-car elem (car x) cx i null)
-                                   (lambda (m) (loop (cdr x) cx (add1 i) (cons m dots-acc))))]
-                            [(null? x)
-                             (define attr-count (sp:dots-attr-count simple))
-                             (append (group-matches attr-count dots-acc) acc)]
-                            [else (failure* (ps-add-cdr pr-base i) es)])))])]
-          [else (error 'simple-parse "bad: ~e" simple)]))
-  (loop simple x cx 0 init-acc))
+                    (let ([pr (ps-add-cdr pr-base i)]
+                          [es (es-add-atom '() es)])
+                      (failure* pr es))])]
+            [(sp:dots? simple)
+             (define elem (sp:dots-elem simple))
+             (cond [(sp:triv? elem)
+                    (define pred (trivial:predicate (sp:triv-triv elem)))
+                    (define xs (stx->list x))
+                    (cond [(and xs (list? xs) (andmap pred xs))
+                           (if (sp:triv-bind-index elem)
+                               (cons xs acc)
+                               acc)]
+                          [else
+                           (define pr (ps-add-cdr pr-base i))
+                           (define desc (trivial:desc (sp:triv-triv elem)))
+                           (predicate-ellipsis-fail x cx pr es pred desc)])]
+                   [else
+                    (let loop ([x x] [cx cx] [i i] [dots-acc null])
+                      (let ([x (if (syntax? x) (syntax-e x) x)] [cx (if (syntax? x) x cx)])
+                        (cond [(pair? x)
+                               (bind (match-car elem (car x) cx i null)
+                                     (lambda (m) (loop (cdr x) cx (add1 i) (cons m dots-acc))))]
+                              [(null? x)
+                               (define attr-count (sp:dots-attr-count simple))
+                               (append (group-matches attr-count dots-acc) acc)]
+                              [else (failure* (ps-add-cdr pr-base i) es)])))])]
+            [(sp:lit? simple)
+             (match-literal simple x cx i #f acc)]
+            [else (error 'simple-parse "bad: ~e" simple)]))
+    (loop simple x cx i acc))
+  (bind (outerloop simple x cx pr-base 0 null)
+        (lambda (acc) (if litv (cons matched-literals acc) acc))))
 
 (define (group-matches n xss)
   (cond [(= n 0) null]
@@ -394,6 +418,7 @@
          current-state
          current-state-writable?
          state-cons!
+         state-append!
          track-literals)
 
 (define (unwind-to undos base)
@@ -420,6 +445,10 @@
 (define (state-cons! key value)
   (define state (current-state))
   (current-state (hash-set state key (cons value (hash-ref state key null)))))
+
+(define (state-append! key value)
+  (define state (current-state))
+  (current-state (hash-set state key (append value (hash-ref state key null)))))
 
 (define (track-literals who v #:introduce? [introduce? #t])
   (unless (syntax? v)

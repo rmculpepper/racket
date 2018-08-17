@@ -713,11 +713,20 @@ Conventions:
                   (let-attributes (name-attr ...) k)
                   (let ([es* (es-add-thing pr 'description #t role es)])
                     (fail (failure* pr es*))))))]
-       [#s(pat:simple (attr ...) simple)
-        (with-syntax ([(attr ...) (reverse (syntax->list #'(attr ...)))])
-          #'(let ([r (simple-parse 'simple x cx pr es null)])
-              (if (or (pair? r) (null? r))
+       [#s(pat:simple (attr ...) simple ())
+        (with-syntax ([(attr ...) (reverse (syntax->list #'(attr ...)))]
+                      [ok? (if (zero? (length (syntax->list #'(attr ...)))) #'null? #'pair?)])
+          #`(let ([r (simple-parse 'simple x cx pr es #f)])
+              (if (ok? r)
                   (let/unpack ((attr ...) r) k)
+                  (fail r))))]
+       [#s(pat:simple (attr ...) simple (lit-id ...))
+        (with-syntax ([(attr ...) (reverse (syntax->list #'(attr ...)))])
+          #'(let ([r (simple-parse 'simple x cx pr es (quote-syntax #(lit-id ...)))])
+              (if (pair? r)
+                  (with ([undo-stack (cons (current-state) undo-stack)])
+                    (state-append! 'literals (car r))
+                    (let/unpack ((attr ...) (cdr r)) k))
                   (fail r))))]
        [_ (wrong-syntax stx "internal error: bad S pattern: ~e" #'pattern0)])]))
 

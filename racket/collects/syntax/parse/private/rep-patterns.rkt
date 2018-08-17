@@ -150,7 +150,7 @@
 ;; Stage 6: Recognize simple patterns
 
 ;; SinglePattern ::= ...
-;; + (pat:simple IAttrs Simple)     -- Simple defined in residual.rkt
+;; + (pat:simple IAttrs Simple (Listof Identifier) -- Simple defined in residual.rkt
 
 ;; ------------------------------------------------------------
 
@@ -180,7 +180,7 @@
 (define-struct pat:fixup (stx bind varname scname argu sep role parser*) #:prefab)
 (define-struct pat:and/fixup (stx patterns) #:prefab)
 (define-struct pat:seq-end () #:prefab)
-(define-struct pat:simple (attrs simple) #:prefab)
+(define-struct pat:simple (attrs simple literals) #:prefab)
 
 (define-struct action:cut () #:prefab)
 (define-struct action:fail (when message) #:prefab)
@@ -316,7 +316,7 @@
     [(pat:fixup stx bind varname scname argu sep role parser*) #t]
     [(pat:and/fixup stx ps) (andmap wf-A/S/H? ps)]
     [(pat:seq-end) #f] ;; Should only occur in ListPattern!
-    [(pat:simple attrs simple) #t]
+    [(pat:simple attrs simple literals) #t]
     [_ #f]))
 
 (define (wf-L? x)
@@ -447,7 +447,7 @@
        (if name (list (attr name 0 #t)) null)]
       [(pat:fixup _ bind _ _ _ _ _ _)
        (if bind (list (attr bind 0 #t)) null)]
-      [(pat:simple attrs _)
+      [(pat:simple attrs _ _)
        attrs]
       ;; -- A patterns
       [(action:bind attr expr)
