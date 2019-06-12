@@ -7,11 +7,10 @@
          "minimatch.rkt"
          "tree-util.rkt"
          "rep-patterns.rkt"
+         "opt-logging.rkt"
          "kws.rkt")
 (provide (struct-out pk1)
          (rename-out [optimize-matrix0 optimize-matrix]))
-
-(define-logger stxpattern)
 
 ;; ----
 
@@ -85,27 +84,14 @@
 
 (define (optimize-matrix0 rows)
 
-  (when #t
-    (define ps (for/list ([row (in-list rows)]) (car (pk1-patterns row))))
-    (define propss (map pattern-props ps))
-    (define main-ps (map pattern-main-pattern ps))
-    (define main-propss (map pattern-props main-ps))
-    (log-stxpattern-debug
-     "patterns:\n;! ~s\n~a\n"
-     (list (length rows) (decode-pattern-props (apply bitwise-ior propss)))
-     (string-join
-      (for/list ([p (in-list ps)]
-                 [main-p (in-list main-ps)]
-                 [props (in-list propss)]
-                 [main-props (in-list main-propss)])
-        (define (info p props)
-          `((size ,(pattern-size p)) (attrs ,(length (pattern-attrs p))) ,(decode-pattern-props props)))
-        (format ";@ ~s\n~a"
-                (if (eq? main-p p) (list (info p props)) (list (info main-p main-props) (info p props)))
-                (if #f
-                    (pretty-format (pattern->sexpr p) #:mode 'write)
-                    (format "~s" (pattern->sexpr p)))))
-      "\n")))
+  (log-stxpattern "patterns"
+                  (map (lambda (p)
+                         (define main-p (pattern-main-pattern p))
+                         (list p
+                               (decode-pattern-props (pattern-props p))
+                               main-p
+                               (decode-pattern-props (pattern-props main-p))))
+                         (for/list ([row (in-list rows)]) (car (pk1-patterns row)))))
 
   (define now (current-inexact-milliseconds))
   (when (and (> (length rows) 1))
@@ -120,35 +106,14 @@
            (log-syntax-parse-debug "OPT ==> (~s ms)\n~a" (floor (- then now))
                                    (pretty-format (matrix->sexpr result) #:mode 'print))]))
 
-  (when #t
-    (define ps (matrix-subpatterns result))
-    (log-stxpattern-debug
-     "matrix subpatterns: ~s\n~a\n" (length ps)
-     (parameterize ((current-pvar->symbol (lambda (s) 'x))
-                    (current-stxclass-parser->symbol (lambda (s) 'sc))
-                    (current-literal->symbol (lambda (s) 'literal)))
-       (string-join
-        (for/list ([p (in-list ps)])
-          (format "~v" (pattern->sexpr p)))
-        "\n"))))
-
-  (when #f
-    (define (desyntaxify x)
-      (define (for-node x) (if (syntax? x) (syntax->datum x) x))
-      (tree-transform x for-node))
-    (define (pattern-simple-dot-heads p)
-      (define (for-pattern p recur)
-        (match p
-          [(pat:dots (list (ehpat _ (hpat:single sp) '#f _)) tail)
-           (cons sp (recur))]
-          [_ (recur)]))
-      (pattern-reduce p for-pattern append))
-    (log-stxpattern-debug
-     "dots subpatterns:\n~a\n"
-     (string-join
-      (for/list ([p (in-list (pattern-simple-dot-heads (matrix-subpatterns result)))])
-        (format "~v" (pattern->sexpr p)))
-      "\n")))
+  (log-stxpattern "post/subpatterns"
+                  (map (lambda (p)
+                         (define main-p (pattern-main-pattern p))
+                         (list p
+                               (decode-pattern-props (pattern-props p))
+                               main-p
+                               (decode-pattern-props (pattern-props main-p))))
+                       (matrix-subpatterns result)))
 
   (optimize-pattern result))
 
@@ -238,6 +203,7 @@
   (define (for-pattern p recur)
     (cond [(> (size p) 2)
            (when #t
+             (log-stxpattern "simple" p)
              (log-syntax-parse-debug "simple: ~v" (pattern->sexpr p)))
            (define-values (simple literals) (convert-pattern p))
            (pat:simple (get-attrs p) simple literals)]
@@ -531,26 +497,8 @@
 
 (define (*append a b) (if (null? b) a (append a b)))
 
-(define (stx-e x) (if (syntax? x) (syntax-e x) x))
+;; ============================================================
 
-;; ----
-
-(define current-pvar->symbol
-  (make-parameter (lambda (s) (if (identifier? s) (syntax-e s) s))))
-(define current-stxclass-parser->symbol
-  (make-parameter (lambda (p)
-                    (cond [(regexp-match #rx"^parse-(.*)$" (symbol->string (syntax-e p)))
-                           => (lambda (m) (string->symbol (cadr m)))]
-                          [else "??"]))))
-(define current-literal->symbol
-  (make-parameter (lambda (s) (if (identifier? s) (syntax-e s) s))))
-(define (pvar->symbol s)
-  (cond [(or (symbol? s) (identifier? s)) ((current-pvar->symbol) s)]
-        [else '_]))
-(define (stxclass-parser->symbol s)
-  ((current-stxclass-parser->symbol) s))
-(define (literal->symbol s)
-  ((current-literal->symbol) s))
 (define (matrix->sexpr rows)
   (cond [(null? rows) ;; shouldn't happen
          '(FAIL)]
@@ -568,72 +516,9 @@
      (list 'PAIR (matrix->sexpr inner))]
     [(pk/and inner)
      (list 'AND (matrix->sexpr inner))]))
-(define (pattern->sexpr p)
-  (match p
-    [(pat:any) '_]
-    [(pat:integrated name pred desc _)
-     (format-symbol "~a:~a" (pvar->symbol name) desc)]
-    [(pat:svar name)
-     (pvar->symbol name)]
-    [(pat:var/p name parser _ _ _ _)
-     (cond [(and parser (stxclass-parser->symbol parser))
-            => (lambda (scname) (format-symbol "~a:~a" (pvar->symbol name) scname))]
-           [else (pvar->symbol name)])]
-    [(? pat:literal?)
-     `(syntax ,(literal->symbol (pat:literal-id p)))]
-    [(pat:datum datum)
-     (cond [(or (symbol? datum) (pair? datum))
-            `(quote ,datum)]
-           [else datum])]
-    [(pat:action action (pat:any)) (pattern->sexpr action)]
-    [(pat:action action inner) (list '~AAND (pattern->sexpr action) (pattern->sexpr inner))]
-    [(pat:and patterns) (cons '~and (map pattern->sexpr patterns))]
-    [(pat:or _ patterns _) (cons '~or (map pattern->sexpr patterns))]
-    [(pat:not pattern) (list '~not (pattern->sexpr pattern))]
-    [(pat:pair head tail)
-     (cons (pattern->sexpr head) (pattern->sexpr tail))]
-    [(pat:head head tail)
-     (cons (pattern->sexpr head) (pattern->sexpr tail))]
-    [(pat:dots (list eh) tail)
-     (list* (pattern->sexpr eh) '... (pattern->sexpr tail))]
-    [(pat:dots ehs tail)
-     (list* (cons '~alt (map pattern->sexpr ehs)) '... (pattern->sexpr tail))]
-    [(pat:describe sp _ _ _) (list '~describe (pattern->sexpr sp))]
-    [(pat:delimit sp) (list '~delimit-cut (pattern->sexpr sp))]
-    [(pat:commit sp) (list '~commit (pattern->sexpr sp))]
-    [(pat:ord pattern _ _) (list '~ord (pattern->sexpr pattern))]
-    [(pat:post sp) (list '~post (pattern->sexpr sp))]
-    [(pat:seq-end) '()]
-    [(action:cut) '~!]
-    [(action:fail cnd msg) (list '~fail)]
-    [(action:bind attr expr) (list '~bind)]
-    [(action:and as) (cons '~and (map pattern->sexpr as))]
-    [(action:parse sp expr) (list '~parse (pattern->sexpr sp))]
-    [(action:do stmts) (list '~do)]
-    [(action:undo stmts) (list '~undo)]
-    [(action:ord ap _ _) (list '~ord (pattern->sexpr ap))]
-    [(action:post ap) (list '~post (pattern->sexpr ap))]
-    [(hpat:single sp) (pattern->sexpr sp)]
-    [(hpat:var/p name parser _ _ _ _)
-     (cond [(and parser (stxclass-parser->symbol parser))
-            => (lambda (scname) (format-symbol "~a:~a" (pvar->symbol name) scname))]
-           [else (pvar->symbol name)])]
-    [(hpat:seq lp) (cons '~seq (pattern->sexpr lp))]
-    [(hpat:action ap hp) (list '~AAND (pattern->sexpr ap) (pattern->sexpr hp))]
-    [(hpat:and hp sp) (list '~and (pattern->sexpr hp) (pattern->sexpr sp))]
-    [(hpat:or _ hps _) (cons '~or (map pattern->sexpr hps))]
-    [(hpat:describe hp _ _ _) (list '~describe (pattern->sexpr hp))]
-    [(hpat:delimit hp) (list '~delimit-cut (pattern->sexpr hp))]
-    [(hpat:commit hp) (list '~commit (pattern->sexpr hp))]
-    [(hpat:ord hp _ _) (list '~ord (pattern->sexpr hp))]
-    [(hpat:post hp) (list '~post (pattern->sexpr hp))]
-    [(hpat:peek hp) (list '~peek (pattern->sexpr hp))]
-    [(hpat:peek-not hp) (list '~peek-not (pattern->sexpr hp))]
-    [(ehpat _as hpat repc _cn)
-     (if (eq? repc #f) (pattern->sexpr hpat) (list '~REPC (pattern->sexpr hpat)))]
-    [_ '<Pattern>]))
 
 ;; ============================================================
+;; Pattern properties
 
 (define (bit n) (arithmetic-shift 1 n))
 (define (bitwhen n cnd?) (if cnd? n 0))
@@ -788,6 +673,8 @@
       ['#f 0]))
   (define (pattern-props p) (pattern-reduce-left p handle bitwise-ior))
   (pattern-props p))
+
+;; ============================================================
 
 ;; pattern-main-pattern : *Pattern -> *Pattern
 (define (pattern-main-pattern p0)
