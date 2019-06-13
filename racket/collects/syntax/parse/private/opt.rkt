@@ -554,6 +554,172 @@
 
 ;; ============================================================
 
+(define (bit n) (arithmetic-shift 1 n))
+(define (bitwhen n cnd?) (if cnd? n 0))
+
+(define EXPOSED:CUT   (bit 0))
+(define EXPOSED:MULTI (bit 1))
+(define HAS:CUT       (bit 4))
+(define HAS:UNDO      (bit 5))  ;; includes literals!
+(define HAS:EXPR      (bit 6))
+(define HAS:OR        (bit 7))
+(define HAS:HEAD      (bit 8))
+(define HAS:LITERAL   (bit 9))
+;; FIXME: lit in non-default phase
+(define HAS:INLSC     (bit 11))
+(define HAS:SSTXCLASS (bit 12))  ;; but not integrated stxclass
+(define HAS:HSTXCLASS (bit 13))
+(define HAS:REFLECT   (bit 14))
+(define HAS:FAIL      (bit 15))  ;; has ~fail check
+(define HAS:DOTS      (bit 16))
+(define HAS:DOTS:ALTS (bit 17))
+(define HAS:DOTS:HEAD (bit 18))
+(define HAS:DOTS:REPC (bit 19))
+(define HAS:DOTS:NNIL (bit 20))  ;; dots tail is NOT null
+
+(define (decode-pattern-props n)
+  (define (flag sym bit)
+    (if (zero? (bitwise-and n bit)) #f sym))
+  (filter symbol?
+          (list (flag 'E-cut EXPOSED:CUT)
+                (flag 'E-multi EXPOSED:MULTI)
+                (flag 'cut HAS:CUT)
+                (flag 'undo HAS:UNDO)
+                (flag 'expr HAS:EXPR)
+                (flag 'or HAS:OR)
+                (flag 'head HAS:HEAD)
+                (flag 'lit HAS:LITERAL)
+                (flag 's-class HAS:SSTXCLASS)
+                (flag 'h-class HAS:HSTXCLASS)
+                (flag 'reflect HAS:REFLECT)
+                (flag 'inlsc HAS:INLSC)
+                (flag 'fail HAS:FAIL)
+                (flag 'dots HAS:DOTS)
+                (flag 'dots-alts HAS:DOTS:ALTS)
+                (flag 'dots-head HAS:DOTS:HEAD)
+                (flag 'dots-repc HAS:DOTS:REPC)
+                (flag 'dots-nnil HAS:DOTS:REPC))))
+
+;; pattern-props : *Pattern -> Nat
+;; Returns #t if p has expr that needs attr bindings (or do env!)
+(define (pattern-props p)
+  (define ior bitwise-ior)
+  (define (clr n . ks) (bitwise-and n (apply bitwise-xor -1 ks)))
+  (define (handle p recur)
+    (match p
+      ;; -- S patterns
+      ;; [(pat:any) (recur)]
+      ;; [(pat:svar name) (recur)]
+      [(pat:var/p _ _ argu _ _ opts)
+       (ior (bitwhen (+ HAS:CUT EXPOSED:CUT) (not (scopts-delimit-cut? opts)))
+            (bitwhen EXPOSED:MULTI (not (scopts-commit? opts)))
+            (bitwhen HAS:EXPR (not (inv-argu? argu)))
+            HAS:UNDO HAS:SSTXCLASS)]
+      [(pat:reflect _ _ _ _ _)
+       (ior EXPOSED:MULTI HAS:EXPR HAS:UNDO HAS:SSTXCLASS HAS:REFLECT (recur))]
+      ;; [(pat:datum _) (recur)]
+      [(pat:literal _ ip lp)
+       (ior (bitwhen HAS:EXPR (not (and (inv-expr? ip) (inv-expr? lp))))
+            HAS:LITERAL HAS:UNDO
+            (recur))]
+      ;; [(pat:action a sp) (recur)]
+      [(pat:head headp tailp) (ior HAS:HEAD (recur))]
+      ;; [(pat:pair headp tailp) (recur)]
+      ;; [(pat:vector sp) (recur)]
+      ;; [(pat:box sp) (recur)]
+      ;; [(pat:pstruct key sp) (recur)]
+      [(pat:describe sp desc _ _)
+       (ior (bitwhen HAS:EXPR (not (inv-expr? desc)))
+            (recur))]
+      ;; [(pat:and ps) (recur)]
+      [(pat:or _ ps _) (ior EXPOSED:MULTI HAS:OR (recur))]
+      [(pat:not sp) (clr (recur) EXPOSED:MULTI)]
+      [(pat:dots (list (ehpat _ (? single-pattern? headp) repc _)) (pat:datum '()))
+       (ior HAS:DOTS (handle-repc repc) (recur))]
+      [(pat:dots headps tailp)
+       (ior HAS:DOTS
+            (bitwhen EXPOSED:MULTI #t)
+            (bitwhen HAS:DOTS:ALTS (> (length headps) 1))
+            (bitwhen HAS:DOTS:NNIL (not (equal? tailp (pat:datum '()))))
+            (recur))]
+      [(pat:delimit sp) (clr (recur) EXPOSED:CUT)]
+      [(pat:commit sp) (clr (recur) EXPOSED:CUT EXPOSED:MULTI)]
+      ;; [(pat:ord sp _ _) (recur)]
+      ;; [(pat:post sp) (recur)]
+      [(pat:integrated _ _ _ _)
+       (ior HAS:INLSC (recur))]
+      ;; -- A patterns
+      [(action:cut) (ior HAS:CUT EXPOSED:CUT)]
+      [(action:fail cnd msg)
+       (ior (bitwhen HAS:EXPR (not (and (inv-expr? cnd) (inv-expr? msg))))
+            HAS:FAIL)]
+      [(action:bind attr expr)
+       (ior (bitwhen HAS:EXPR (not (inv-expr? expr)))
+            (recur))]
+      ;; [(action:and ps) (recur)]
+      [(action:parse sp rhs)
+       (ior (bitwhen HAS:EXPR (not (inv-expr? rhs)))
+            (recur))]
+      [(action:do stmts) (ior HAS:EXPR HAS:UNDO (recur))]
+      [(action:undo stmts) (ior HAS:EXPR HAS:UNDO (recur))]
+      ;; [(action:ord sp _ _) (recur)]
+      ;; [(action:post sp) (recur)]
+      ;; -- H patterns
+      ;; [(hpat:single sp) (recur)]
+      [(hpat:var/p _ _ argu _ _ opts)
+       (ior (bitwhen (+ HAS:CUT EXPOSED:CUT) (not (scopts-delimit-cut? opts)))
+            (bitwhen EXPOSED:MULTI (not (scopts-commit? opts)))
+            (bitwhen HAS:EXPR (not (inv-argu? argu)))
+            HAS:UNDO HAS:HSTXCLASS)]
+      [(hpat:reflect _ _ _ _ _)
+       (ior EXPOSED:MULTI HAS:EXPR HAS:UNDO HAS:HSTXCLASS HAS:REFLECT)]
+      ;; [(hpat:seq lp) (recur)]
+      ;; [(hpat:action a hp) (recur)]
+      [(hpat:describe hp desc _ _)
+       (ior (bitwhen HAS:EXPR (not (inv-expr? desc)))
+            (recur))]
+      ;; [(hpat:and hp sp) (recur)]
+      [(hpat:or _ ps _) (ior EXPOSED:MULTI HAS:OR (recur))]
+      [(hpat:delimit hp) (clr (recur) EXPOSED:CUT)]
+      [(hpat:commit hp) (clr (recur) EXPOSED:CUT EXPOSED:MULTI)]
+      ;; [(hpat:ord hp _ _) (recur)]
+      ;; [(hpat:post hp) (recur)]
+      ;; [(hpat:peek hp) (recur)]
+      ;; [(hpat:peek-not hp) (recur)]
+      ;; EH patterns
+      [(ehpat _ hp repc _)
+       (ior (bitwhen HAS:DOTS:HEAD (head-pattern? hp))
+            (handle-repc repc)
+            (recur))]
+      [_ (recur)]))
+  (define (handle-repc repc)
+    (match repc
+      [(rep:once name under over)
+       (ior HAS:DOTS:REPC
+            (bitwhen HAS:EXPR (not (andmap inv-expr? (list name under over)))))]
+      [(rep:optional name over defaults)
+       (ior HAS:DOTS:REPC
+            (bitwhen HAS:EXPR (not (and (inv-expr? name) (inv-expr? over))))
+            (apply bitwise-ior (map pattern-props defaults)))]
+      [(rep:bounds min max name under over)
+       (ior HAS:DOTS:REPC
+            (bitwhen HAS:EXPR (not (andmap inv-expr? (list min max name under over)))))]
+      ['#f 0]))
+  (define (pattern-props p) (pattern-reduce-left p handle bitwise-ior))
+  (pattern-props p))
+
+;; pattern-main-pattern : *Pattern -> *Pattern
+(define (pattern-main-pattern p0)
+  (let loop ([p p0])
+    (match p
+      [(pat:and (cons p _)) (loop p)]
+      [(pat:ord p _ _) (loop p)]
+      [(hpat:and hp _) (loop hp)]
+      [(hpat:ord p _ _) (loop p)]
+      [_ p])))
+
+;; ============================================================
+
 (define (pattern-size p)
   (pattern-reduce-left p (lambda (p recur) (+ 1 (recur))) +))
 
