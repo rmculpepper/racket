@@ -1384,8 +1384,8 @@
   (pattern-transform p for-pattern))
 
 ;; list-pattern-replace-end : ListPattern {L,S}Pattern -> {L,S}Pattern
-(define (list-pattern-replace-end lp endp)
-  (let loop ([lp lp])
+(define (list-pattern-replace-end lp0 endp)
+  (let loop ([lp lp0])
     (match lp
       [(pat:datum '()) endp]
       [(pat:seq-end) endp]
@@ -1396,7 +1396,8 @@
        ;; This is awkward, but it is needed to pop the ORD progress frame on success.
        (define sp* (list-pattern-replace-end sp (pat:seq-end)))
        (pat:head (hpat:ord (hpat:seq sp*) group index) endp)]
-      [(pat:pair hp tp) (pat:pair hp (loop tp))])))
+      [(pat:pair hp tp) (pat:pair hp (loop tp))]
+      [else (error 'list-pattern-replace-end "bad pattern:\n~v" lp0)])))
 
 ;; ----------------------------------------
 ;; Normalize *:andu patterns, drop useless actions
