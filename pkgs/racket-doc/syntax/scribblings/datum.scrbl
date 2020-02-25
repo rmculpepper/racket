@@ -37,18 +37,28 @@ similarly produces a datum.  Pattern variables bound in each
 appears in a @racket[clause]'s pattern, it matches the corresponding
 symbol (using @racket[eq?]).
 
-
-Using @racket[datum-case] and @racket[datum] is essentially equivalent
+Using @racket[datum-case] and @racket[datum] is similar
 to converting the input to @racket[syntax-case] using
 @racket[datum->syntax] and then wrapping each use of @racket[syntax]
 with @racket[syntax->datum], but @racket[datum-case] and
-@racket[datum] to not create intermediate syntax objects.
+@racket[datum] to not create intermediate syntax objects, and they do
+not destroy existing syntax objects within the S-expression structure
+of @racket[datum-expr].
 
 @examples[
 #:eval datum-eval
 (datum-case '(1 "x" -> y) (->)
   [(a ... -> b) (datum (b (+ a) ...))])
-]}
+]
+
+The @racket[datum] form also cooperates with @tech[#:key "pattern
+variable" #:doc '(lib "scribblings/reference/reference.scrbl")]{syntax
+pattern variables}, such as those bound by @racket[syntax-case] and
+@tech{attributes} bound by @racketmodname[syntax/parse]. See
+@secref["stxparse-attrs"] for more information.
+
+@history[#:changed "7.6.0.14" @elem{Changed @racket[datum] to
+cooperate with @racket[syntax-case], @racketmodname[syntax/parse], etc.}]}
 
 
 @defform[(with-datum ([pattern datum-expr] ...)
