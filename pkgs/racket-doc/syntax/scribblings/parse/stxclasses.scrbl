@@ -479,16 +479,22 @@ variable}. The name of a nested attribute is computed by concatenating
 the pattern variable name with the syntax class's exported attribute's
 name, separated by a dot (see the example below).
 
-Attributes can be used in two ways: with the @racket[attribute] form,
-and inside syntax templates via @racket[syntax], @racket[quasisyntax],
-etc. Attribute names cannot be used directly as expressions; that is,
-attributes are not variables.
+Attributes can be used in three ways: with the @racket[attribute]
+form; inside syntax templates via @racket[syntax],
+@racket[quasisyntax], etc; and inside @racket[datum]
+templates. Attribute names cannot be used directly as expressions;
+that is, attributes are not variables.
 
 A @deftech{syntax-valued attribute} is an attribute whose value is a
-syntax object, a syntax list of the appropriate @tech{ellipsis depth},
-or a tree containing @tech[#:doc '(lib
+syntax object or list of the appropriate @tech{ellipsis depth}. That
+is, an attribute with ellipsis depth 0 is syntax-valued if its value
+is @racket[syntax?]; an attribute with ellipis depth 1 is
+syntax-valued if its value is @racket[(listof syntax?)]; an attribute
+with ellipsis depth 2 is syntax-valued if its value is @racket[(listof
+(listof syntax?))]; and so on. The value is considered syntax-valued
+if it contains @tech[#:doc '(lib
 "scribblings/reference/reference.scrbl")]{promises} that when
-completely forced produces a suitable syntax object or syntax
+completely forced produces a suitable syntax object or
 list. Syntax-valued attributes can be used within @racket[syntax],
 @racket[quasisyntax], etc as part of a syntax template. If an
 attribute is used inside a syntax template but it is not
@@ -520,10 +526,11 @@ and @racket[~parse] will convert the right-hand side to a (possibly
 The @racket[table] syntax class provides four attributes:
 @racket[key], @racket[value], @racket[hashtable], and
 @racket[sorted-kv]. The @racket[hashtable] attribute has
-@tech{ellipsis depth} 0 and the rest have depth 1; all but
-@racket[hashtable] are syntax-valued. The @racket[sorted-kv]
-attribute's value is a promise; it will be automatically forced if
-used in a syntax template.
+@tech{ellipsis depth} 0 and the rest have depth 1; @racket[key],
+@racket[value], and @racket[sorted-kv] are syntax-valued, but
+@racket[hashtable] is not. The @racket[sorted-kv] attribute's value is
+a promise; it will be automatically forced if used in a syntax
+template.
 
 Syntax-valued attributes can be used in syntax templates:
 
@@ -543,7 +550,7 @@ But non-syntax-valued attributes cannot:
    #'t.hashtable])
 ]
 
-Use the @racket[attribute] form to get the value of an attribute
+The @racket[attribute] form gets the value of an attribute
 (syntax-valued or not).
 
 @interaction[#:eval the-eval
@@ -584,10 +591,10 @@ binds the following nested attributes: @racket[y.a] at depth 2,
 depth 1.
 
 An attribute's ellipsis nesting depth is @emph{not} a guarantee that
-it is syntax-valued. In particular, @racket[~or*] and
-@racket[~optional] patterns may result in attributes with fewer than
-expected levels of list nesting, and @racket[#:attr] and
-@racket[~bind] can be used to bind attributes to arbitrary values.
+it is syntax-valued or has any list structure. In particular,
+@racket[~or*] and @racket[~optional] patterns may result in attributes
+with fewer than expected levels of list nesting, and @racket[#:attr]
+and @racket[~bind] can be used to bind attributes to arbitrary values.
 
 @examples[#:eval the-eval
 (syntax-parse #'(a b 3)
