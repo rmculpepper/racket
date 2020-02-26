@@ -2,7 +2,8 @@
 @(require "common.rkt"
           scribble/eval
           (for-label racket/base 
-                     syntax/datum))
+                     syntax/datum
+                     syntax/parse))
 
 @(define datum-eval (make-base-eval))
 @interaction-eval[#:eval datum-eval (require syntax/datum)]
@@ -54,11 +55,11 @@ of @racket[datum-expr].
 The @racket[datum] form also cooperates with @tech[#:key "pattern
 variable" #:doc '(lib "scribblings/reference/reference.scrbl")]{syntax
 pattern variables}, such as those bound by @racket[syntax-case] and
-@tech{attributes} bound by @racketmodname[syntax/parse]. See
+@tech{attributes} bound by @racket[syntax-parse]. See
 @secref["stxparse-attrs"] for more information.
 
 @history[#:changed "7.6.0.14" @elem{Changed @racket[datum] to
-cooperate with @racket[syntax-case], @racketmodname[syntax/parse], etc.}]}
+cooperate with @racket[syntax-case], @racket[syntax-parse], etc.}]}
 
 
 @defform[(with-datum ([pattern datum-expr] ...)
