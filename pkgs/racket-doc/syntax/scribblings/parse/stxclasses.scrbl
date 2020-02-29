@@ -640,56 +640,30 @@ not require attributes to be syntax-valued. Wherever the
 (as opposed to reusing syntax objects bound by pattern variables), the
 @racket[datum] form creates plain S-expressions.
 
-As one consequence, @racket[datum] provides a more convenient way of
-getting the list of syntax objects bound to a syntax pattern variable
-of depth 1. For example, the following expressions are equivalent,
-except that the @racket[datum] expression avoids creating and
-eliminating a superfluous syntax object wrapper:
-
-@interaction[#:eval the-eval
-(with-syntax ([(x ...) #'(1 2 3)])
-  (datum (x ...)))
-(with-syntax ([(x ...) #'(1 2 3)])
-  (syntax->list #'(x ...)))
-]
-
-The same principle applies to attributes. Continuing the
-@racket[table] example from above, we can use @racket[datum] with the
-@racket[key] attribute as follows:
+Continuing the @racket[table] example from above, we can use
+@racket[datum] with the @racket[key] attribute as follows:
 
 @interaction[#:eval the-eval
 (syntax-parse #'((a 1) (b 2) (c 3))
   [t:table (datum (t.key ...))])
 ]
 
-The @racket[datum] template may contain multiple pattern variables
-combined within some S-expression structure. For example, the
-following expressions are equivalent:
+A @racket[datum] template may contain multiple pattern variables
+combined within some S-expression structure:
 
 @interaction[#:eval the-eval
 (syntax-parse #'((a 1) (b 2) (c 3))
   [t:table (datum ([t.key t.value] ...))])
-(syntax-parse #'((a 1) (b 2) (c 3))
-  [t:table (map syntax->list (syntax->list #'([t.key t.value] ...)))])
 ]
 
-The @racket[~@] splicing form behaves the same for @racket[datum] as
-for @racket[syntax].
+A @racket[datum] template can use the @racket[~@] and @racket[~?]
+template forms:
 
 @interaction[#:eval the-eval
 (syntax-parse #'((a 1) (b 2) (c 3))
   [t:table (datum ((~@ t.key t.value) ...))])
-(syntax-parse #'((a 1) (b 2) (c 3))
+(syntax-parse #'((a 56) (b 71) (c 13))
   [t:table (datum ((~@ . t.sorted-kv) ...))])
-#;
-(syntax-parse #'((a 1) (b 2) (c 3))
-  [t:table (datum ([(~@ . t.sorted-kv)] ...))])
-]
-
-The @racket[~?] form behaves similarly for @racket[datum] as for
-@racket[syntax]:
-
-@interaction[#:eval the-eval
 (syntax-parse #'( ((a 1) (b 2) (c 3)) ((d 4) (e 5)) )
   [(t1:table (~or* t2:table #:nothing))
    (datum (t1.key ... (~? (~@ t2.key ...))))])
@@ -699,8 +673,8 @@ The @racket[~?] form behaves similarly for @racket[datum] as for
 ]
 
 However, unlike for @racket[syntax], a value of @racket[#f] only
-triggers a template failure if a list is needed for ellipsis
-iteration; it does not cause a failure when it occurs as a
+signals a template failure to @racket[~?] if a list is needed for
+ellipsis iteration; it does not cause a failure when it occurs as a
 leaf. Contrast the following:
 
 @interaction[#:eval the-eval
@@ -720,11 +694,6 @@ example, if the pattern is @racket[(t:table ...)], then both
 @racket[(attribute t.hashtable)] and @racket[(datum (t.hashtable
 ...))] produce a @racket[(listof hash?)], but the ellipses make it
 more apparent.
-
-
-
-
-
 
 @history[#:changed "7.6.0.14" @elem{Added support for syntax pattern
 variables and attributes to @racket[datum].}]

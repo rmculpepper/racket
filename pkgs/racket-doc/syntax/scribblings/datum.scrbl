@@ -55,8 +55,36 @@ of @racket[datum-expr].
 The @racket[datum] form also cooperates with @tech[#:key "pattern
 variable" #:doc '(lib "scribblings/reference/reference.scrbl")]{syntax
 pattern variables}, such as those bound by @racket[syntax-case] and
-@tech{attributes} bound by @racket[syntax-parse]. See
-@secref["stxparse-attrs"] for more information.
+@tech{attributes} bound by @racket[syntax-parse] (see
+@secref["stxparse-attrs"] for more information about attributes). As
+one consequence, @racket[datum] provides a convenient way of getting
+the list of syntax objects bound to a syntax pattern variable of depth
+1. For example, the following expressions are equivalent, except that
+the @racket[datum] expression avoids creating and eliminating a
+superfluous syntax object wrapper:
+
+@interaction[#:eval datum-eval
+(with-syntax ([(x ...) #'(a b c)])
+  (datum (x ...)))
+(with-syntax ([(x ...) #'(a b c)])
+  (syntax->list #'(x ...)))
+]
+
+A template can also use multiple syntax or datum pattern variables and
+datum constants, and it can use the @racket[~@] and @racket[~?]
+template forms:
+
+@interaction[#:eval datum-eval
+(with-syntax ([(x ...) #'(a b c)])
+  (with-datum ([(y ...) (list 1 2 3)])
+    (datum ([x -> y] ...))))
+(with-syntax ([(x ...) #'(a b c)])
+  (with-datum ([(y ...) (list 1 2 3)])
+    (datum ((~@ x y) ...))))
+]
+
+See @secref["stxparse-attrs"] for examples of @racket[~?] with
+@racket[datum].
 
 @history[#:changed "7.6.0.14" @elem{Changed @racket[datum] to
 cooperate with @racket[syntax-case], @racket[syntax-parse], etc.}]}
