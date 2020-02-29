@@ -502,13 +502,12 @@ list. Syntax-valued attributes can be used within @racket[syntax],
 attribute is used inside a syntax template but it is not
 syntax-valued, an error is signaled.
 
-The value of an attribute is not required to be syntax.
-Non-syntax-valued attributes can be used to return a parsed
-representation of a subterm or the results of an analysis on the
-subterm. A non-syntax-valued attribute should be bound using the
-@racket[#:attr] directive or a @racket[~bind] pattern; @racket[#:with]
-and @racket[~parse] will convert the right-hand side to a (possibly
-3D) syntax object.
+There are uses for non-syntax-valued attributes. A non-syntax-valued
+attribute can be used to return a parsed representation of a subterm
+or the results of an analysis on the subterm. A non-syntax-valued
+attribute must be bound using the @racket[#:attr] directive or a
+@racket[~bind] pattern; @racket[#:with] and @racket[~parse] will
+convert the right-hand side to a (possibly 3D) syntax object.
 
 @examples[#:eval the-eval
 (define-syntax-class table
@@ -531,8 +530,7 @@ The @racket[table] syntax class provides four attributes:
 @tech{ellipsis depth} 0 and the rest have depth 1; @racket[key],
 @racket[value], and @racket[sorted-kv] are syntax-valued, but
 @racket[hashtable] is not. The @racket[sorted-kv] attribute's value is
-a promise; it will be automatically forced if used in a syntax
-template.
+a promise; it will be automatically forced if used in a template.
 
 Syntax-valued attributes can be used in syntax templates:
 
@@ -552,8 +550,8 @@ But non-syntax-valued attributes cannot:
    #'t.hashtable])
 ]
 
-The @racket[attribute] form gets the value of an attribute
-(syntax-valued or not).
+The @racket[attribute] form gets the value of an attribute, whether it
+is syntax-valued or not.
 
 @interaction[#:eval the-eval
 (syntax-parse #'((a 1) (b 2) (c 3))
@@ -633,12 +631,13 @@ definition or @racket[syntax-parse] expression.
 
 @subsection[#:tag "attributes-and-datum"]{Attributes and @racket[datum]}
 
-The @racket[datum] form is another way of using syntax pattern
-variables and attributes. Unlike @racket[syntax], @racket[datum] does
-not require attributes to be syntax-valued. Wherever the
-@racket[syntax] form would create syntax objects based on its template
-(as opposed to reusing syntax objects bound by pattern variables), the
-@racket[datum] form creates plain S-expressions.
+The @racket[datum] form is another way, in addition to @racket[syntax]
+and @racket[attribute], of using syntax pattern variables and
+attributes. Unlike @racket[syntax], @racket[datum] does not require
+attributes to be syntax-valued. Wherever the @racket[syntax] form
+would create syntax objects based on its template (as opposed to
+reusing syntax objects bound by pattern variables), the @racket[datum]
+form creates plain S-expressions.
 
 Continuing the @racket[table] example from above, we can use
 @racket[datum] with the @racket[key] attribute as follows:
