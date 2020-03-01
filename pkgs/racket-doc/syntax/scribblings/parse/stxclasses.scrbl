@@ -190,6 +190,28 @@ including nested attributes produced by syntax classes associated with
 the pattern variables.
 }
 
+
+@defidform[this-syntax]{
+
+When used as an expression within a syntax-class definition or
+@racket[syntax-parse] expression, evaluates to the syntax object or
+@tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{syntax
+pair} being matched.
+
+@examples[#:eval the-eval
+(define-syntax-class one (pattern _ #:attr s this-syntax))
+(syntax-parse #'(1 2 3) [(1 o:one _) (attribute o.s)])
+(syntax-parse #'(1 2 3) [(1 . o:one) (attribute o.s)])
+(define-splicing-syntax-class two (pattern (~seq _ _) #:attr s this-syntax))
+(syntax-parse #'(1 2 3) [(t:two 3) (attribute t.s)])
+(syntax-parse #'(1 2 3) [(1 t:two) (attribute t.s)])
+]
+
+Raises an error when used as an expression outside of a syntax-class
+definition or @racket[syntax-parse] expression.
+}
+
+
 @defthing[prop:syntax-class (struct-type-property/c (or/c identifier?
                                                           (-> any/c identifier?)))]{
 
@@ -609,25 +631,6 @@ Returns the value associated with the @tech{attribute} named
 syntax error is raised.
 }
 
-@defidform[this-syntax]{
-
-When used as an expression within a syntax-class definition or
-@racket[syntax-parse] expression, evaluates to the syntax object or
-@tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{syntax
-pair} being matched.
-
-@examples[#:eval the-eval
-(define-syntax-class one (pattern _ #:attr s this-syntax))
-(syntax-parse #'(1 2 3) [(1 o:one _) (attribute o.s)])
-(syntax-parse #'(1 2 3) [(1 . o:one) (attribute o.s)])
-(define-splicing-syntax-class two (pattern (~seq _ _) #:attr s this-syntax))
-(syntax-parse #'(1 2 3) [(t:two 3) (attribute t.s)])
-(syntax-parse #'(1 2 3) [(1 t:two) (attribute t.s)])
-]}
-
-Raises an error when used as an expression outside of a syntax-class
-definition or @racket[syntax-parse] expression.
-
 
 @subsection[#:tag "attributes-and-datum"]{Attributes and @racket[datum]}
 
@@ -673,8 +676,8 @@ template forms:
 
 However, unlike for @racket[syntax], a value of @racket[#f] only
 signals a template failure to @racket[~?] if a list is needed for
-ellipsis iteration; it does not cause a failure when it occurs as a
-leaf. Contrast the following:
+ellipsis iteration, as in the previous example; it does not cause a
+failure when it occurs as a leaf. Contrast the following:
 
 @interaction[#:eval the-eval
 (syntax-parse #'( ((a 1) (b 2) (c 3)) #:nothing )

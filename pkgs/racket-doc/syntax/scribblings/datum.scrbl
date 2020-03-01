@@ -54,7 +54,7 @@ of @racket[datum-expr].
 
 The @racket[datum] form also cooperates with @tech[#:key "pattern
 variable" #:doc '(lib "scribblings/reference/reference.scrbl")]{syntax
-pattern variables}, such as those bound by @racket[syntax-case] and
+pattern variables} such as those bound by @racket[syntax-case] and
 @tech{attributes} bound by @racket[syntax-parse] (see
 @secref["stxparse-attrs"] for more information about attributes). As
 one consequence, @racket[datum] provides a convenient way of getting
