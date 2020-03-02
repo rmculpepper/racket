@@ -83,7 +83,7 @@ template forms:
     (datum ((~@ x y) ...))))
 ]
 
-See @secref["stxparse-attrs"] for examples of @racket[~?] with
+See @secref["attributes-and-datum"] for examples of @racket[~?] with
 @racket[datum].
 
 @history[#:changed "7.6.0.14" @elem{Changed @racket[datum] to
