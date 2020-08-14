@@ -1,6 +1,10 @@
-#lang racket/load
+#lang racket
 (require racket/port
-         math/statistics)
+         math/statistics
+         (only-in "opt.rkt" pattern-size)
+         (submod "opt-logging.rkt" parse-log))
+
+;; PLTSTDERR="debug@stxpattern" raco setup -D -j 1 2> STXPATTERN.log
 
 (define-syntax-rule (inc! x e) (set! x (+ x e)))
 (define-syntax-rule (push! x e) (set! x (cons e x)))
@@ -26,41 +30,38 @@
           dots-alts dots-head dots-repc dots-nnil))
 
 (define (process-cs-info info)
-  (match info
-    [(list npatterns props)
-     (push! cs-npatternss npatterns)
-     (for ([flag (in-list known-flags)])
-       (hinc! cs-flagh flag (I (memq flag props))))]))
+  ;; info : (Listof (list Pattern Props MainPattern Props))
+  (inc! cs-count 1)
+  (push! cs-npatternss (length info))
+  (define allprops (remove-duplicates (apply append (map cadr info))))
+  (for ([flag (in-list known-flags)])
+    (hinc! cs-flagh flag (I (memq flag allprops))))
+  (for ([pinfo (in-list info)])
+    (process-p-info pinfo)))
 
 (define (process-p-info info)
+  (inc! p-count 1)
   (match info
-    [(list (list (list 'size main-size)  (list 'attrs main-attrs)  main-props)
-           (list (list 'size whole-size) (list 'attrs whole-attrs) whole-props))
+    [(list pattern props main-pattern main-props)
+     (push! w-sizes (pattern-size pattern))
+     (push! m-sizes (pattern-size main-pattern))
      (for ([flag (in-list known-flags)])
-       (push! m-sizes main-size)
-       (push! w-sizes whole-size)
-       (hinc! m-flagh flag (I (memq flag main-props)))
-       (hinc! w-flagh flag (I (memq flag whole-props))))]
-    [(list info)
-     (process-p-info (list info info))]))
+       (hinc! w-flagh flag (I (memq flag props)))
+       (hinc! m-flagh flag (I (memq flag main-props))))]))
 
-(define (process-pattern p-sexpr) (void))
+(define (process-simple p-sexpr) (void))
 
 ;; ============================================================
 
-(for ([line (in-lines)])
-  (cond [(regexp-match? #rx"^;!" line)
-         (inc! cs-count 1)
-         (process-cs-info (read (open-input-string (substring line 2))))]
-        [(regexp-match? #rx"^;@" line)
-         (inc! p-count 1)
-         (process-p-info (read (open-input-string (substring line 2))))]
-        [(regexp-match? #rx"^stxpattern: " line)
-         (void)]
-        [(regexp-match? #rx"^[ ]*$" line)
-         (void)]
-        [else
-         (process-pattern (read (open-input-string line)))]))
+(for ([e (in-list (parse-log-input (current-input-port)))])
+  (case (car e)
+    [("simple")             ;; Pattern
+     (process-simple (cdr e))]
+    [("patterns")           ;; (Listof (list Pattern Props MainPattern Props))
+     (process-cs-info (cdr e))]
+    [("post/subpatterns")   ;; (Listof (list Pattern Props MainPattern Props))
+     (void)]
+    [else (void)]))
 
 ;; ----------------------------------------
 
@@ -71,15 +72,17 @@
             (~a #:width 12 flag) (~r #:min-width 4 flagct) (~r #:precision 2 (* 100.0 (/ flagct total))))))
 
 (printf "Set count: ~s\n" cs-count)
-(printf "Set mean patterns: ~a\n" (~r #:precision 2 (mean cs-npatternss)))
-(print-flag-table cs-flagh cs-count)
+(unless (zero? cs-count)
+  (printf "Set mean patterns: ~a\n" (~r #:precision 2 (mean cs-npatternss)))
+  (print-flag-table cs-flagh cs-count))
 (newline)
 (printf "Pattern count: ~s\n" p-count)
-(printf "Whole pattern mean size: ~a\n" (~r #:precision 2 (mean w-sizes)))
-(printf "Whole pattern flags:\n")
-(print-flag-table w-flagh p-count)
-(printf "Main pattern mean size: ~a\n" (~r #:precision 2 (mean m-sizes)))
-(printf "Main pattern flags:\n")
-(print-flag-table m-flagh p-count)
+(unless (zero? p-count)
+  (printf "Whole pattern mean size: ~a\n" (~r #:precision 2 (mean w-sizes)))
+  (printf "Whole pattern flags:\n")
+  (print-flag-table w-flagh p-count)
+  (printf "Main pattern mean size: ~a\n" (~r #:precision 2 (mean m-sizes)))
+  (printf "Main pattern flags:\n")
+  (print-flag-table m-flagh p-count))
 
 ;; FIXME: dots-head reporting messed up

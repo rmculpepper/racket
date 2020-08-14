@@ -10,7 +10,8 @@
          "opt-logging.rkt"
          "kws.rkt")
 (provide (struct-out pk1)
-         (rename-out [optimize-matrix0 optimize-matrix]))
+         (rename-out [optimize-matrix0 optimize-matrix])
+         pattern-size)
 
 ;; ----
 
