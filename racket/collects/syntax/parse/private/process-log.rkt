@@ -4,6 +4,8 @@
          (only-in "opt.rkt" pattern-size)
          (submod "opt-logging.rkt" parse-log))
 
+(define SHOW-MAIN? #f)
+
 ;; PLTSTDERR="debug@stxpattern" raco setup -D -j 1 2> STXPATTERN.log
 
 (define-syntax-rule (inc! x e) (set! x (+ x e)))
@@ -66,23 +68,31 @@
 ;; ----------------------------------------
 
 (define (print-flag-table flagh total)
+  (printf "Features used:\n")
   (for ([flag (in-list known-flags)])
     (define flagct (hash-ref flagh flag 0))
     (printf " - ~a: ~a (~a%)\n"
             (~a #:width 12 flag) (~r #:min-width 4 flagct) (~r #:precision 2 (* 100.0 (/ flagct total))))))
 
+(printf "== Clause-Set Info ==\n")
 (printf "Set count: ~s\n" cs-count)
 (unless (zero? cs-count)
   (printf "Set mean patterns: ~a\n" (~r #:precision 2 (mean cs-npatternss)))
+  (for ([md (in-list '(1 2))])
+    (let ([ct (for/sum ([n (in-list cs-npatternss)] #:when (= n md)) 1)])
+      (printf " w/ ~a patterns: ~a (~a%)\n" md ct (~r #:precision 2 (* 100 ct (/ cs-count))))))
   (print-flag-table cs-flagh cs-count))
 (newline)
+
+(printf "== Pattern Info ==\n")
 (printf "Pattern count: ~s\n" p-count)
 (unless (zero? p-count)
   (printf "Whole pattern mean size: ~a\n" (~r #:precision 2 (mean w-sizes)))
   (printf "Whole pattern flags:\n")
   (print-flag-table w-flagh p-count)
-  (printf "Main pattern mean size: ~a\n" (~r #:precision 2 (mean m-sizes)))
-  (printf "Main pattern flags:\n")
-  (print-flag-table m-flagh p-count))
+  (when SHOW-MAIN?
+    (printf "Main pattern mean size: ~a\n" (~r #:precision 2 (mean m-sizes)))
+    (printf "Main pattern flags:\n")
+    (print-flag-table m-flagh p-count)))
 
 ;; FIXME: dots-head reporting messed up
