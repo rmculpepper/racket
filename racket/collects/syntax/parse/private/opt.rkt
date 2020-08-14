@@ -655,7 +655,7 @@
       ;; [(hpat:peek-not hp) (recur)]
       ;; EH patterns
       [(ehpat _ hp repc _)
-       (ior (bitwhen HAS:DOTS:HEAD (head-pattern? hp))
+       (ior (bitwhen HAS:DOTS:HEAD (and (head-pattern? hp) (not (hpat:single? hp))))
             (handle-repc repc)
             (recur))]
       [_ (recur)]))
