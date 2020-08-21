@@ -489,12 +489,16 @@
 ;; ============================================================
 
 (define (create-pat:or ps)
-  (define attrss (map pattern-attrs ps))
-  (pat:or (union-iattrs attrss) ps attrss))
+  (cond [(and (pair? ps) (null? (cdr ps))) (car ps)]
+        [else
+         (define attrss (map pattern-attrs ps))
+         (pat:or (union-iattrs attrss) ps attrss)]))
 
 (define (create-hpat:or ps)
-  (define attrss (map pattern-attrs ps))
-  (hpat:or (union-iattrs attrss) ps attrss))
+  (cond [(and (pair? ps) (null? (cdr ps))) (car ps)]
+        [else
+         (define attrss (map pattern-attrs ps))
+         (hpat:or (union-iattrs attrss) ps attrss)]))
 
 ;; create-ehpat : HeadPattern RepConstraint Syntax -> EllipsisHeadPattern
 (define (create-ehpat head repc head-stx)
