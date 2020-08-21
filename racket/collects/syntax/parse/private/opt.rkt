@@ -127,43 +127,6 @@
 
 (define (optimize-pattern p)
 
-  (define (simple-literal-pattern? p)
-    (define (ok-phase-expr? e)
-      (syntax-case e (quote syntax-local-phase-level)
-        [(syntax-local-phase-level) #t]
-        [_ #f]))
-    (match p
-      [(pat:literal lit-id input-phase literal-phase)
-       (and (ok-phase-expr? input-phase) (ok-phase-expr? literal-phase))]
-      [else #f]))
-
-  (define simple-size-table (make-hasheq))
-  (define (size p) (hash-ref simple-size-table p 0))
-  (let ()
-    (define (record-size! p size)
-      (hash-set! simple-size-table p size))
-    (define (for-pattern p recur)
-      (recur)
-      (match p
-        [(pat:any) (record-size! p 1)]
-        [(pat:svar _) (record-size! p 1)]
-        [(pat:datum '()) (record-size! p 1)]
-        [(pat:integrated _ parser desc _)
-         (when (member desc '("identifier" "expression" "keyword"))
-           (record-size! p 1))]
-        [(pat:pair hp tp)
-         (when (and (> (size hp) 0) (> (size tp) 0))
-           (record-size! p (+ (size hp) (size tp))))]
-        [(pat:dots (list (ehpat _ (hpat:single hp) '#f _)) (pat:datum '()))
-         (when (> (size hp) 0)
-           (record-size! p (+ (size hp) 2)))]
-        [(pat:and (list (pat:svar name) (? simple-literal-pattern?)))
-         (record-size! p 1)]
-        [(? simple-literal-pattern?)
-         (record-size! p 1)]
-        [_ (void)]))
-    (pattern-reduce-left p for-pattern void))
-
   ;; ordering of pattern-attrs might not be consistent w/ simple-parse
   (define (get-attrs p)
     (match p
@@ -203,15 +166,45 @@
     (values simple (reverse literals)))
 
   (define (for-pattern p recur)
-    (cond [(> (size p) 2)
+    (cond [(> (or (pattern-simple-size p) 0) 2)
            (when #t
              (log-stxpattern "simple" p)
-             (log-syntax-parse-debug "simple: ~v" (pattern->sexpr p)))
+             (log-syntax-parse-debug "simple: ~v" p #;(pattern->sexpr p)))
            (define-values (simple literals) (convert-pattern p))
            (pat:simple (get-attrs p) simple literals)]
           [else (recur)]))
 
   (pattern-transform-preorder p for-pattern))
+
+;; ----------------------------------------
+
+(define/memo (pattern-simple-size p)
+  (define (simple-literal-pattern? p)
+    (define (ok-phase-expr? e)
+      (syntax-case e (quote syntax-local-phase-level)
+        [(syntax-local-phase-level) #t]
+        [_ #f]))
+    (match p
+      [(pat:literal lit-id input-phase literal-phase)
+       (and (ok-phase-expr? input-phase) (ok-phase-expr? literal-phase))]
+      [else #f]))
+  (define (s+ a b) (and a b (+ a b)))
+  (define (size p) (pattern-simple-size p))
+  (match p
+    [(pat:any) 1]
+    [(pat:svar _) 1]
+    [(pat:datum '()) 1]
+    [(pat:integrated _ parser desc _)
+     (and (member desc '("identifier" "expression" "keyword")) 1)]
+    [(pat:pair hp tp)
+     (s+ (size hp) (size tp))]
+    [(pat:dots (list (ehpat _ (hpat:single hp) '#f _)) (pat:datum '()))
+     (s+ (size hp) 2)]
+    [(pat:and (list (pat:svar name) (? simple-literal-pattern?)))
+     1]
+    [(? simple-literal-pattern?)
+     1]
+    [_ #f]))
 
 ;; ----------------------------------------
 
