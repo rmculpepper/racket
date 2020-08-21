@@ -1,10 +1,7 @@
 #lang racket
 (require racket/port
-         math/statistics
-         (only-in "opt.rkt" pattern-size)
+         (only-in "opt.rkt" pattern-prop-symbols pattern-size)
          (submod "opt-logging.rkt" parse-log))
-
-(define SHOW-MAIN? #f)
 
 ;; PLTSTDERR="debug@stxpattern" raco setup -D -j 1 2> STXPATTERN.log
 
@@ -15,9 +12,7 @@
 
 ;; ============================================================
 
-(define known-flags
-  '(E-cut E-multi cut undo expr or head lit s-class h-class reflect inlsc fail dots
-          dots-alts dots-head dots-repc dots-nnil))
+(define known-flags pattern-prop-symbols)
 
 (define collector%
   (class object%
@@ -34,7 +29,6 @@
     (define w-flagh (make-hasheq))
 
     (super-new)
-
 
     (define/public (process-cs-info info)
       ;; info : (Listof (list Pattern Props MainPattern Props))
@@ -69,16 +63,17 @@
                 (~r #:min-width 4 flagct)
                 (~r #:precision 2 (* 100.0 (/ flagct total))))))
 
-    (define/public (print)
-      (printf "== Clause-Set Info ==\n")
-      (printf "Set count: ~s\n" cs-count)
-      (unless (zero? cs-count)
-        (printf "Set mean patterns: ~a\n" (~r #:precision 2 (mean cs-npatternss)))
-        (for ([md (in-list '(1 2))])
-          (let ([ct (for/sum ([n (in-list cs-npatternss)] #:when (= n md)) 1)])
-            (printf " w/ ~a patterns: ~a (~a%)\n" md ct (~r #:precision 2 (* 100 ct (/ cs-count))))))
-        (print-flag-table cs-flagh cs-count))
-      (newline)
+    (define/public (print show-clause-sets? show-main?)
+      (when show-clause-sets?
+        (printf "== Clause-Set Info ==\n")
+        (printf "Set count: ~s\n" cs-count)
+        (unless (zero? cs-count)
+          (printf "Set mean patterns: ~a\n" (~r #:precision 2 (mean cs-npatternss)))
+          (for ([md (in-list '(1 2))])
+            (let ([ct (for/sum ([n (in-list cs-npatternss)] #:when (= n md)) 1)])
+              (printf " w/ ~a patterns: ~a (~a%)\n" md ct (~r #:precision 2 (* 100 ct (/ cs-count))))))
+          (print-flag-table cs-flagh cs-count))
+        (newline))
 
       (printf "== Pattern Info ==\n")
       (printf "Pattern count: ~s\n" p-count)
@@ -86,12 +81,14 @@
         (printf "Whole pattern mean size: ~a\n" (~r #:precision 2 (mean w-sizes)))
         (printf "Whole pattern flags:\n")
         (print-flag-table w-flagh p-count)
-        (when SHOW-MAIN?
+        (when show-main?
           (printf "Main pattern mean size: ~a\n" (~r #:precision 2 (mean m-sizes)))
           (printf "Main pattern flags:\n")
           (print-flag-table m-flagh p-count))))
 
     ))
+
+(define (mean xs) (/ (for/sum ([x xs]) x) (for/sum ([x xs]) 1)))
 
 ;; ============================================================
 
@@ -109,10 +106,10 @@
     [else (void)]))
 
 (printf "** Pre-optimization **\n")
-(send pre print)
+(send pre print #t #t)
 (newline)
 (printf "** Post-optimization **\n")
-(send post print)
+(send post print #f #f)
 
 ;; ----------------------------------------
 
