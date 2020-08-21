@@ -1,7 +1,8 @@
 #lang racket
 (require racket/port
          (only-in "opt.rkt" pattern-prop-symbols pattern-size)
-         (submod "opt-logging.rkt" parse-log))
+         (submod "opt-logging.rkt" parse-log)
+         (only-in "opt-logging.rkt" pattern->sexpr))
 
 ;; PLTSTDERR="debug@stxpattern" raco setup -D -j 1 2> STXPATTERN.log
 
@@ -98,7 +99,7 @@
 (for ([e (in-list (parse-log-input (current-input-port)))])
   (case (car e)
     [("simple")             ;; Pattern
-     (send pre process-simple (cdr e))]
+     (eprintf "SIMPLE ~e\n" (pattern->sexpr (cdr e)))]
     [("patterns")           ;; (Listof (list Pattern Props MainPattern Props))
      (send pre process-cs-info (cdr e))]
     [("post/subpatterns")   ;; (Listof (list Pattern Props MainPattern Props))
