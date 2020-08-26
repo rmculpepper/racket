@@ -127,14 +127,6 @@
 
 (define (optimize-pattern p)
 
-  ;; ordering of pattern-attrs might not be consistent w/ simple-parse
-  (define (get-attrs p)
-    (match p
-      [(pat:pair hp tp) (append (get-attrs hp) (get-attrs tp))]
-      [(pat:dots (list (ehpat attrs (hpat:single hp) '#f _)) (pat:datum '()))
-       (repc-adjust-attrs (get-attrs hp) #f)]
-      [_ (pattern-attrs p)]))
-
   (define (for-pattern p recur)
     (cond [(> (or (pattern-simple-size p) 0) 2)
            (when #t
@@ -180,6 +172,13 @@
   (define literals null) ;; mutated!
   (define (next-bind-index)
     (begin0 bind-counter (set! bind-counter (add1 bind-counter))))
+  (define (get-attrs p)
+    ;; ordering of pattern-attrs might not be consistent w/ simple-parse
+    (match p
+      [(pat:pair hp tp) (append (get-attrs hp) (get-attrs tp))]
+      [(pat:dots (list (ehpat attrs (hpat:single hp) '#f _)) (pat:datum '()))
+       (repc-adjust-attrs (get-attrs hp) #f)]
+      [_ (pattern-attrs p)]))
   (define (loop p)
     (match p
       [(pat:any) (sp:triv #f 'any)]
