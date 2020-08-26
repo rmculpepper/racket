@@ -723,6 +723,7 @@
   (define (pattern-props p) (pattern-reduce-left p handle bitwise-ior))
   (pattern-props p))
 
+
 ;; ============================================================
 
 ;; pattern-main-pattern : *Pattern -> *Pattern
@@ -756,7 +757,7 @@
             (free-identifier=? (datum->syntax #'datum '#%datum) #'#%datum)]
            [_ #f])]
         [else
-         (when #t (error 'inv-expr? "not syntax: ~e" e))
+         (when #f (error 'inv-expr? "not syntax: ~e" e))
          #f]))
 
 (define (inv-argu? a)
