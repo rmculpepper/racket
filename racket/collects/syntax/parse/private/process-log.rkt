@@ -26,6 +26,7 @@
     (define p-count 0)
     (define m-sizes null)
     (define w-sizes null)
+    (define p-simple-count 0)
     (define m-flagh (make-hasheq))
     (define w-flagh (make-hasheq))
 
@@ -51,7 +52,9 @@
            (hinc! w-flagh flag (I (memq flag props)))
            (hinc! m-flagh flag (I (memq flag main-props))))]))
 
-    (define/public (process-simple p-sexpr) (void))
+    (define/public (process-simple p)
+      (inc! p-simple-count 1)
+      (void))
 
     ;; ----------------------------------------
 
@@ -77,7 +80,8 @@
         (newline))
 
       (printf "== Pattern Info ==\n")
-      (printf "Pattern count: ~s\n" p-count)
+      (printf "Pattern count: ~s~a\n"
+              p-count (if (zero? p-simple-count) "" (format " (~s simple)" p-simple-count)))
       (unless (zero? p-count)
         (printf "Whole pattern mean size: ~a\n" (~r #:precision 2 (mean w-sizes)))
         (printf "Whole pattern flags:\n")
@@ -99,7 +103,8 @@
 (for ([e (in-list (parse-log-input (current-input-port)))])
   (case (car e)
     [("simple")             ;; Pattern
-     (eprintf "SIMPLE ~e\n" (pattern->sexpr (cdr e)))]
+     (eprintf "SIMPLE ~e\n" (pattern->sexpr (cdr e)))
+     (send post process-simple (cdr e))]
     [("patterns")           ;; (Listof (list Pattern Props MainPattern Props))
      (send pre process-cs-info (cdr e))]
     [("post/subpatterns")   ;; (Listof (list Pattern Props MainPattern Props))
