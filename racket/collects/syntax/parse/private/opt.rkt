@@ -567,7 +567,7 @@
     (cond [(symbol? v) (encode-pattern-props1 v)]
           [(exact-nonnegative-integer? v) v]
           [(list? v) (for/fold ([acc 0]) ([v (in-list v)]) (bitwise-ior acc (loop v)))]
-          [else 0])))
+          [else (encode-pattern-props1 '*ERROR*)])))
 
 #|
 
