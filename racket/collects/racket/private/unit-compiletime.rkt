@@ -1,6 +1,8 @@
 #lang racket/base
 
 (require syntax/boundmap
+         syntax/parse
+         syntax/datum
          "unit-syntax.rkt")
 (require (for-syntax racket/base))
 (require (for-template racket/base
@@ -23,6 +25,190 @@
          process-spec
          make-relative-introducer
          build-init-depend-property)
+
+(begin
+  (provide tagged-sig-spec
+           sig-spec
+           init-depends-decl
+           sig-id
+           tagged-sig-id)
+
+  ;; ----------------------------------------
+  ;; from docs for `unit`:
+
+  (define-syntax-class tagged-sig-spec
+    #:attributes ()
+    #:literals (tag)
+    (pattern :sig-spec)
+    (pattern (tag tagname:id spec:sig-spec)))
+
+  (define-syntax-class sig-spec
+    #:attributes (sig) ;; Signature, result of `process-spec`
+    #:description #f
+    (pattern inner:inner-sig-spec
+             #:attr sig ((datum inner.make-sig) #'inner (box #f) #t values)))
+
+  (define-syntax-class inner-sig-spec
+    #:attributes (make-sig) ;; Syntax (Box ??) Boolean ?? -> Signature
+    #:description "sig-spec"
+    #:literals (prefix rename only except bind-at)
+    (pattern name:sig-id
+             #:attr make-sig
+             (λ (spec-bind res bind? add-prefix)
+               (do-identifier* #'name (datum name.sig)
+                               (or spec-bind #'name) res bind? add-prefix)))
+    (pattern (prefix pfx:id spec:inner-sig-spec)
+             #:attr make-sig
+             (λ (spec-bind res bind? add-prefix)
+               ((datum spec.make-sig) spec-bind res bind?
+                                      (λ (id) (add-prefix (do-prefix id #'pfx))))))
+    (pattern (rename spec:inner-sig-spec [internal:id external:id] ...)
+             #:attr make-sig
+             (λ (spec-bind res bind? add-prefix)
+               (define sig-res
+                 (do-rename ((datum spec.make-sig) spec-bind res bind? add-prefix)
+                            #'(internal ...)
+                            (datum->syntax #f (add-prefixes add-prefix #'(external ...)))))
+               (define dup (check-duplicate-identifier (sig-int-names sig-res)))
+               (when dup
+                 (raise-stx-err (format "rename created duplicate identifier ~a" (syntax-e dup))
+                                this-syntax))
+               sig-res))
+    (pattern (only spec:inner-sig-spec only-name:id ...)
+             #:attr make-sig
+             (λ (spec-bind res bind? add-prefix)
+               (do-only/except ((datum spec.make-sig) spec-bind res bind? add-prefix)
+                               (add-prefixes add-prefix #'(only-name ...))
+                               (lambda (id) id)
+                               (lambda (id) (car (generate-temporaries (list id)))))))
+    (pattern (except spec:inner-sig-spec except-name:id ...)
+             #:attr make-sig
+             (λ (spec-bind res bind? add-prefix)
+               (do-only/except ((datum spec.make-sig) spec-bind res bind? add-prefix)
+                               (add-prefixes add-prefix #'(except-name ...))
+                               (lambda (id) (car (generate-temporaries (list id))))
+                               (lambda (id) id))))
+    ;; internal?
+    (pattern (bind-at lctx spec:inner-sig-spec)
+             #:attr make-sig
+             (λ (spec-bind res bind? add-prefix)
+               ((datum spec.make-sig) #'lctx res bind? add-prefix))))
+
+  (define-splicing-syntax-class init-depends-decl
+    #:attributes ()
+    #:literals (init-depend)
+    (pattern (~seq (init-depend dep:tagged-sig-id ...)))
+    (pattern (~seq)))
+
+  (define-syntax-class sig-id
+    #:attributes (sig) ;; Signature
+    (pattern (~var name (static (lift/maybe-set!-trans signature?) "signature"))
+             #:attr sig ((lift/maybe-set!-trans values) (datum name.value))))
+
+  (define-syntax-class tagged-sig-id
+    #:attributes ()
+    #:literals (tag)
+    (pattern name:sig-id)
+    (pattern (tag tagname:id name:sig-id)))
+
+  (define ((lift/maybe-set!-trans f) v)
+    (if (set!-transformer? v) (f (set!-transformer-procedure v)) (f v)))
+
+  ;; ----------------------------------------
+  ;; from docs for `define-signature`:
+  (provide extension-decl
+           sig-elem
+           sig-form-id)
+
+  (define-splicing-syntax-class extension-decl
+    #:attributes ()
+    #:literals (extends)
+    (pattern (~seq extends name:sig-id))
+    (pattern (~seq)))
+
+  (define-syntax-class sig-elem
+    #:attributes (ast) ;; (U Syntax[core-sig-elem] (cons signature-form? Syntax))
+    (pattern core:core-sig-elem #:cut
+             #:attr ast #'core)
+    (pattern (~and sig-form (m:sig-form-id . _))
+             #:attr ast (cons (datum m.value) #'sig-form)))
+
+  (define-syntax-class core-sig-elem
+    #:attributes () #:no-delimit-cut
+    #:literals (define-syntaxes define-values define-values-for-export contracted)
+    (pattern name:id #:attr expand (lambda (intro) (list #'name)))
+    (pattern (define-syntaxes ~! (name:id ...) rhs:expr))
+    (pattern (define-values ~! (name:id ...) rhs:expr))
+    (pattern (define-values-for-export ~! (name:id ...) rhs:expr))
+    (pattern (contracted ~! [name:id contract:expr] ...)))
+
+  (define-syntax-class sig-form-id
+    #:attributes (name value)
+    #:literals (struct~)
+    (pattern (~var name (static (lift/maybe-set!-trans signature-form?) "signature form"))
+             #:cut #:attr value ((lift/maybe-set!-trans values) (datum name.value)))
+    (pattern struct~ #:with :sig-form-id #'struct~r)) ;; redirect struct~ to struct~r
+
+  (define (signature-form*? v)
+    (and (set!-transformer? v)
+         (signature-form? (set!-transformer-procedure v))))
+
+  ;; ----------------------------------------
+  ;; from docs for `compound-unit`:
+  (provide link-binding
+           tagged-link-id
+           linkage-decl)
+
+  (define-syntax-class link-binding
+    #:attributes ()
+    (pattern (name:id (~datum :) sig:tagged-sig-id)))
+
+  (define-syntax-class tagged-link-id
+    #:attributes ()
+    #:literals (tag)
+    (pattern (tag tagname:id linkname:id))
+    (pattern (tag linkname:id)))
+
+  (define-syntax-class linkage-decl
+    #:attributes ()
+    (pattern ((bind:link-binding ...) unit-expr:expr link:tagged-link-id ...)))
+
+  ;; ----------------------------------------
+  ;; from docs for `compound-unit/infer`:
+  (provide tagged-infer-link-import
+           tagged-infer-link-export
+           infer-link-export
+           infer-linkage-decl
+           unit-id)
+
+  (define-syntax-class tagged-infer-link-import
+    #:attributes ()
+    (pattern sig:tagged-sig-id)
+    (pattern (link (~datum :) sig:tagged-sig-id)))
+
+  (define-syntax-class tagged-infer-link-export
+    #:attributes ()
+    #:literals (tag)
+    (pattern (tag tagname:id export:infer-link-export))
+    (pattern export:infer-link-export))
+
+  (define-syntax-class infer-link-export
+    #:attributes ()
+    (pattern (~and signame:sig-id ~!))
+    (pattern linkname:id))
+
+  (define-syntax-class infer-linkage-decl
+    #:attributes ()
+    (pattern ((bind:link-binding ...) unitname:unit-id link:tagged-link-id ...))
+    (pattern unitname:unit-id))
+
+  (define-syntax-class unit-id
+    #:attributes ()
+    (pattern (~var name (static (lift/maybe-set!-trans unit-info?) "unit"))))
+
+  (begin))
+
+;; XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 (define-syntax (apply-mac stx)
   (syntax-case stx ()
@@ -236,10 +422,14 @@
                     id
                     id))))
 
-;; do-identifier : identifier syntax-object (box (cons identifier siginfo)) -> sig
+;; do-identifier : identifier syntax (box (cons identifier siginfo)) -> sig
 (define (do-identifier spec spec-bind res bind? add-prefix)
-  (let* ((sig (lookup-signature spec))
-         (vars (signature-vars sig))
+  (let* ((sig (lookup-signature spec)))
+    (do-identifier* spec sig spec-bind res bind? add-prefix)))
+
+;; do-identifier* : identifier sig syntax (box (cons identifier siginfo)) -> sig
+(define (do-identifier* spec sig spec-bind res bind? add-prefix)
+  (let* ((vars (signature-vars sig))
          (vals (signature-val-defs sig))
          (stxs (signature-stx-defs sig))
          (p-vals (signature-post-val-defs sig))
