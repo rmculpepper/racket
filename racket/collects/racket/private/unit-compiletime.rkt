@@ -42,7 +42,6 @@
                   tagged-sigid   ;; (cons (U #f Symbol) Identifier)
                   sig)           ;; sig
     #:description #f
-    #:literals (tag bind-at)
     (pattern spec:inner-tagged-sig-spec
              #:attr result ((datum spec.make-tagged-sig) #f #t)
              #:attr tagged-siginfo (car (datum result))
@@ -51,11 +50,12 @@
 
   (define-syntax-class inner-tagged-sig-spec
     #:description "tagged-sig-spec"
-    #:literals (make-tagged-sig) ;; Boolean -> tagged-sig
-    (pattern (bind-at lctx spec:inner-tagged-sig-spec)
+    #:attributes (make-tagged-sig) ;; Boolean -> tagged-sig
+    #:literals (bind-at tag)
+    (pattern (bind-at ~! lctx spec:inner-tagged-sig-spec)
              #:attr make-tagged-sig (λ (spec-bind bind?)
                                       ((datum spec.make-tagged-sig) #'lctx bind?)))
-    (pattern (tag tagname:id spec:inner-sig-spec)
+    (pattern (tag ~! tagname:id spec:inner-sig-spec)
              #:attr make-tagged-sig (λ (spec-bind bind?)
                                       (define res (box #f))
                                       (define sig ((datum spec.make-sig) spec-bind bind?))
