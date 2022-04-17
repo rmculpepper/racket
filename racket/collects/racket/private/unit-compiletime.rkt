@@ -37,13 +37,41 @@
   ;; from docs for `unit`:
 
   (define-syntax-class tagged-sig-spec
-    #:attributes ()
-    #:literals (tag)
-    (pattern :sig-spec)
-    (pattern (tag tagname:id spec:sig-spec)))
+    #:attributes (result  ;; tagged-sig
+                  tagged-siginfo ;; (cons (U #f Symbol) siginfo)
+                  tagged-sigid   ;; (cons (U #f Symbol) Identifier)
+                  sig)           ;; sig
+    #:description #f
+    #:literals (tag bind-at)
+    (pattern spec:inner-tagged-sig-spec
+             #:attr result ((datum spec.make-tagged-sig) #f #t)
+             #:attr tagged-siginfo (car (datum result))
+             #:attr tagged-sigid (cadr (datum result))
+             #:attr sig (caddr (datum result))))
+
+  (define-syntax-class inner-tagged-sig-spec
+    #:description "tagged-sig-spec"
+    #:literals (make-tagged-sig) ;; Boolean -> tagged-sig
+    (pattern (bind-at lctx spec:inner-tagged-sig-spec)
+             #:attr make-tagged-sig (λ (spec-bind bind?)
+                                      ((datum spec.make-tagged-sig) #'lctx bind?)))
+    (pattern (tag tagname:id spec:inner-sig-spec)
+             #:attr make-tagged-sig (λ (spec-bind bind?)
+                                      (define res (box #f))
+                                      (define sig ((datum spec.make-sig) spec-bind bind?))
+                                      (list (cons (syntax-e #'tagname) (cdr (unbox res)))
+                                            (cons (syntax-e #'tagname) (car (unbox res)))
+                                            sig)))
+    (pattern spec:inner-sig-spec
+             #:attr make-tagged-sig (λ (spec-bind bind?)
+                                      (define res (box #f))
+                                      (define sig ((datum spec.make-sig) spec-bind bind?))
+                                      (list (cons #f (cdr (unbox res)))
+                                            (cons #f (car (unbox res)))
+                                            sig))))
 
   (define-syntax-class sig-spec
-    #:attributes (sig) ;; Signature, result of `process-spec`
+    #:attributes (sig) ;; sig, result of `process-spec`
     #:description #f
     (pattern inner:inner-sig-spec
              #:attr sig ((datum inner.make-sig) #'inner (box #f) #t values)))

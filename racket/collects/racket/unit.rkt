@@ -425,8 +425,6 @@
   (cons (map syntax-local-introduce (car d))
         (syntax-local-introduce (cdr d))))
 
-;; XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-
 (begin-for-syntax
   (define-syntax-class sig-elem
     #:attributes (ast) ;; (U Syntax[core-sig-elem] (cons signature-form? Syntax))
@@ -587,37 +585,34 @@
              (define def (cons (syntax->list #'(name ...)) #'body))
              (loop (cdr sig-elems) bindings val-defs stx-defs (cons def post-val-defs) ctcs)])]))]))
 
-;; XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-
 
 (define-for-syntax (signature->identifiers sigids)
   (define provide-tagged-sigs (map process-tagged-import sigids))
   (define provide-sigs (map caddr provide-tagged-sigs))
   (map sig-int-names provide-sigs))
 
-(define-syntax/err-param (provide-signature-elements stx)
-  (syntax-case stx ()
-    ((_ . p)
-     (let* ((sigs (checked-syntax->list #'p))
-            (nameses (signature->identifiers sigs))
-            ;; Export only the names that would be visible to uses
-            ;;  with the same lexical context as p. Otherwise, we
-            ;;  can end up with collisions with renamings that are
-            ;;  symbolically the same, such as those introduced by
-            ;;  `open'.
-            (nameses (map (lambda (sig names)
-                            (filter (lambda (name)
-                                      (bound-identifier=?
-                                       name
-                                       (datum->syntax sig (syntax-e name))))
-                                    names))
-                          sigs nameses))
-            (names (apply append nameses))
-            (dup (check-duplicate-identifier names)))
-       (when dup
-         (raise-stx-err (format "duplicate binding for ~.s" (syntax-e dup))))
-       (quasisyntax/loc stx
-         (provide #,@names))))))
+(define-syntax (provide-signature-elements stx)
+  (define-syntax-class tagged-import-spec
+    #:attributes ([export-name 1])
+    (pattern spec:tagged-sig-spec
+             ;; Export only the names that would be visible to uses
+             ;;  with the same lexical context as p. Otherwise, we
+             ;;  can end up with collisions with renamings that are
+             ;;  symbolically the same, such as those introduced by
+             ;;  `open'.
+             #:with (export-name:id ...)
+             (filter (lambda (name)
+                       (bound-identifier=? name (datum->syntax #'spec (syntax-e name))))
+                     (sig-int-names (datum spec.sig)))))
+  (syntax-parse stx
+    [(_ p:tagged-import-spec ...)
+     (define dup (check-duplicate-identifier (datum (p.export-name ... ...))))
+     (when dup
+       (raise-syntax-error #f (format "duplicate binding for ~.s" (syntax-e dup)) stx dup))
+     (syntax/loc stx
+       (provide p.export-name ... ...))]))
+
+;; XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 ;; A unit is 
 ;; - (unit (import import-spec ...) (export export-spec ...) unit-body-expr ...)
