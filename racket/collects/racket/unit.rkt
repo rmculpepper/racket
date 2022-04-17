@@ -8,6 +8,8 @@
                      syntax/kerncase
                      syntax/name
                      syntax/parse
+                     syntax/parse/experimental/eh
+                     syntax/datum
                      syntax/struct
                      racket/struct-info
                      syntax/stx
@@ -44,119 +46,64 @@
          unit/c define-unit/contract
          (rename-out [struct~r/ctc struct/ctc]))
 
-(define-syntax/err-param (define-signature-form stx)
-  (syntax-case stx ()
-    ((_ (name arg) . val)
-     (begin
-       (check-id #'name)
-       (check-id #'arg)
-       (syntax-protect
-        #'(define-syntax name
-            (make-set!-transformer
-             (make-signature-form (λ (arg ignored) . val)))))))
-    ((_ (name arg intro-arg) . val)
-     (begin
-       (check-id #'name)
-       (check-id #'arg)
-       (check-id #'intro-arg)
-       (syntax-protect
-        #'(define-syntax name
-            (make-set!-transformer
-             (make-signature-form (λ (arg intro-arg) . val)))))))
-    ((_ name proc-expr)
-     (identifier? #'name)
+(define-syntax define-signature-form
+  (syntax-parser
+    [(_ (name:id arg:id (~optional intro-arg:id)) body:expr ...+)
      (syntax-protect
       #'(define-syntax name
-          (let ([name proc-expr])
+          (make-set!-transformer
+           (make-signature-form (λ (arg (~? intro-arg ignored)) body ...)))))]
+    [(_ name:id proc:expr)
+     (syntax-protect
+      #'(define-syntax name
+          (let ([name proc])
             (make-set!-transformer
-             (make-signature-form (λ (arg ignored) (name arg))))))))
-    ((_ . l)
-     (let ((l (checked-syntax->list stx)))
-       (define name (syntax-e (stx-car stx)))
-       (raise-stx-err 
-        (format (string-append "bad syntax\n"
-                               "  expected one of:\n"
-                               "   (~a (id id) expr ...)\n"
-                               "   (~a (id id id) expr ...)\n"
-                               "   (~a id proc-expr)")
-                name name name))))))
+             (make-signature-form (λ (arg ignored) (name arg)))))))]))
+
+(begin-for-syntax
+  (define-syntax-class omission
+    (pattern (~literal -selectors))
+    (pattern (~literal -setters))
+    (pattern (~literal -constructor))
+    (pattern (~literal -type))))
 
 (module+ compat
   ;; export only for compatibility with `mzlib/unit`
   (provide (protect-out struct) struct/ctc)
 
-  (define-signature-form (struct stx)
-    (parameterize ((error-syntax stx))
-      (syntax-case stx ()
-        ((_ name (field ...) . omissions)
-         (let ([omit-selectors #f]
-               [omit-setters #f]
-               [omit-constructor #f]
-               [omit-type #f])
-           (define (remove-ctor&type-name l)
-             (cond
-              ((and omit-constructor omit-type)
-               (cddr l))
-              (omit-type
-               (cdr l))
-              (omit-constructor
-               (cons (car l) (cddr l)))
-              (else
-               l)))
-           (define (remove-ctor&type-info l)
-             (define new-type
-               (if omit-type
-                   #f
-                   (cadr l)))
-             (define new-ctor
-               (if omit-constructor
-                   #f
-                   (caddr l)))
-             (cons (car l)
-                   (cons new-type
-                         (cons new-ctor
-                               (cdddr l)))))
-           (check-id #'name)
-           (for-each check-id (syntax->list #'(field ...)))
-           (for-each
-            (lambda (omission)
-              (cond
-               ((and (identifier? omission)
-                     (free-identifier=? omission #'-selectors))
-                (set! omit-selectors #t))
-               ((and (identifier? omission)
-                     (free-identifier=? omission #'-setters))
-                (set! omit-setters #t))
-               ((and (identifier? omission)
-                     (free-identifier=? omission #'-constructor))
-                (set! omit-constructor #t))
-               ((and (identifier? omission)
-                     (free-identifier=? omission #'-type))
-                (set! omit-type #t))
-               (else
-                (raise-stx-err
-                 "expected \"-selectors\" or \"-setters\" or \"-constructor\" or \"-type\""
-                 omission))))
-            (checked-syntax->list #'omissions))
-           (cons
-            #`(define-syntaxes (name)
-                #,(remove-ctor&type-info
-                   (build-struct-expand-info
-                    #'name (syntax->list #'(field ...))
-                    omit-selectors omit-setters
-                    #f '(#f) '(#f))))
-            (remove-ctor&type-name
-             (build-struct-names #'name (syntax->list #'(field ...))
-                                 omit-selectors omit-setters #f)))))
-        ((_ name (x . y) . omissions)
-         ;; Will fail
-         (checked-syntax->list (stx-car (stx-cdr (stx-cdr stx)))))
-        ((_ name fields . omissions)
-         (raise-stx-err "expected syntax matching (identifier ...)" #'fields))
-        ((_ name)
-         (raise-stx-err "missing fields"))
-        ((_)
-         (raise-stx-err "missing name and fields"))))))
+  (define-signature-form struct
+    (syntax-parser
+      [(_ name:id (field:id ...) o:omission ...)
+       (define omissions (syntax->datum #'(o ...)))
+       (define omit-selectors   (memq '-selectors omissions))
+       (define omit-setters     (memq '-setters omissions))
+       (define omit-constructor (memq '-constructor omissions))
+       (define omit-type        (memq '-type omissions))
+       (define (remove-ctor&type-name l)
+         (cond [(and omit-constructor omit-type)
+                (cddr l)]
+               [omit-type
+                (cdr l)]
+               [omit-constructor
+                (cons (car l) (cddr l))]
+               [else l]))
+       (define (remove-ctor&type-info l)
+         (define new-type (if omit-type #f (cadr l)))
+         (define new-ctor (if omit-constructor #f (caddr l)))
+         (cons (car l)
+               (cons new-type
+                     (cons new-ctor
+                           (cdddr l)))))
+       (cons
+        #`(define-syntaxes (name)
+            #,(remove-ctor&type-info
+               (build-struct-expand-info
+                #'name (syntax->list #'(field ...))
+                omit-selectors omit-setters
+                #f '(#f) '(#f))))
+        (remove-ctor&type-name
+         (build-struct-names #'name (syntax->list #'(field ...))
+                             omit-selectors omit-setters #f)))])))
 
 (begin-for-syntax
  (define-struct self-name-struct-info (id)
@@ -179,143 +126,66 @@
 (define-for-syntax option-keywords
   "#:mutable, #:constructor-name, #:extra-constructor-name, #:omit-constructor, #:omit-define-syntaxes, or #:omit-define-values")
 
+(begin-for-syntax
+  (define-syntax-class fieldspec
+    #:description "field specification"
+    (pattern field:id)
+    (pattern [field:id #:mutable]))
+
+  (define-eh-alternative-set struct-option-alts
+    (pattern (~optional
+              (~or* (~seq #:constructor-name cname:id)
+                    (~seq #:extra-constructor-name extra-cname:id))))
+    (pattern (~optional (~and #:omit-constructor omit-ctor-kw)))
+    (pattern (~optional (~and #:mutable mutable-kw)))
+    (pattern (~optional (~and #:omit-define-syntaxes omit-defstx-kw)))
+    (pattern (~optional (~and #:omit-define-values omit-defvals-kw)))))
+
 ;; Replacement `struct' signature form for `scheme/unit':
 (define-for-syntax (do-struct~ stx extra-make?)
-  (syntax-case stx ()
-    ((_ name (field ...) opt ...)
-     (begin
-       (unless (identifier? #'name)
-         (raise-syntax-error #f
-                             "expected an identifier to name the structure type"
-                             stx
-                             #'name))
-       (for-each (lambda (field)
-                   (unless (identifier? field)
-                     (syntax-case field ()
-                       [(id #:mutable)
-                        (identifier? #'id)
-                        'ok]
-                       [_
-                        (raise-syntax-error #f
-                                            "bad field specification"
-                                            stx
-                                            field)])))
-                 (syntax->list #'(field ...)))
-       (let*-values ([(no-ctr? mutable? no-stx? no-rt? opt-cname)
-                      (let loop ([opts (syntax->list #'(opt ...))]
-                                 [no-ctr? #f]
-                                 [mutable? #f]
-                                 [no-stx? #f]
-                                 [no-rt? #f]
-                                 [cname #f])
-                        (if (null? opts)
-                            (values no-ctr? mutable? no-stx? no-rt? cname)
-                            (let ([opt (car opts)])
-                              (case (syntax-e opt)
-                                [(#:constructor-name #:extra-constructor-name)
-                                 (if cname
-                                     (raise-syntax-error #f
-                                                         "redundant option"
-                                                         stx
-                                                         opt)
-                                     (if (null? (cdr opts))
-                                         (raise-syntax-error #f
-                                                             "missing identifier after option"
-                                                             stx
-                                                             opt)
-                                         (if (identifier? (cadr opts))
-                                             (loop (cddr opts) #f mutable? no-stx? no-rt?
-                                                   (if (eq? (syntax-e opt) '#:extra-constructor-name)
-                                                       (list (cadr opts))
-                                                       (cadr opts)))
-                                             (raise-syntax-error #f
-                                                                 "not an identifier for a constructor name"
-                                                                 stx
-                                                                 (cadr opts)))))]
-                                [(#:omit-constructor)
-                                 (if no-ctr?
-                                     (raise-syntax-error #f
-                                                         "redundant option"
-                                                         stx
-                                                         opt)
-                                     (loop (cdr opts) #t mutable? no-stx? no-rt? cname))]
-                                [(#:mutable)
-                                 (if mutable?
-                                     (raise-syntax-error #f
-                                                         "redundant option"
-                                                         stx
-                                                         opt)
-                                     (loop (cdr opts) no-ctr? #t no-stx? no-rt? cname))]
-                                [(#:omit-define-syntaxes)
-                                 (if no-stx?
-                                     (raise-syntax-error #f
-                                                         "redundant option"
-                                                         stx
-                                                         opt)
-                                     (loop (cdr opts) no-ctr? mutable? #t no-rt? cname))]
-                                [(#:omit-define-values)
-                                 (if no-rt?
-                                     (raise-syntax-error #f
-                                                         "redundant option"
-                                                         stx
-                                                         opt)
-                                     (loop (cdr opts) no-ctr? mutable? no-stx? #t cname))]
-                                [else
-                                 (raise-syntax-error #f
-                                                     (string-append
-                                                      "expected a keyword to specify option: "
-                                                      option-keywords)
-                                                     stx
-                                                     opt)]))))]
-                     [(def-cname) (cond
-                                   [opt-cname (if (pair? opt-cname)
-                                                  (car opt-cname)
-                                                  opt-cname)]
-                                   [extra-make? #f]
-                                   [else (car (generate-temporaries #'(name)))])]
-                     [(cname) (cond
-                               [opt-cname (if (pair? opt-cname)
-                                              (cons def-cname #'name)
-                                              (cons opt-cname opt-cname))]
-                               [extra-make? #f]
-                               [else (cons def-cname #'name)])]
-                     [(self-ctr?) (and cname
-                                       (bound-identifier=? #'name (cdr cname))
-                                       (not no-ctr?))])
-         (cons
-          #`(define-syntaxes (name)
-              #,(let ([e (build-struct-expand-info
-                          #'name (syntax->list #'(field ...))
-                          #f (not mutable?)
-                          #f '(#f) '(#f)
-                          #:omit-constructor? no-ctr?
-                          #:constructor-name def-cname)])
-                  (if self-ctr?
-                      #`(make-self-name-struct-info 
-                         (lambda () #,e)
-                         (lambda () (quote-syntax #,def-cname)))
-                      e)))
-          (let ([names (build-struct-names #'name (syntax->list #'(field ...))
-                                           #f (not mutable?)
-                                           #:constructor-name def-cname)])
-            (cond
-             [no-ctr? (cons (car names) (cddr names))]
-             [self-ctr? (cons #`(define-values-for-export (#,def-cname) name) 
-                              names)]
-             [else names]))))))
-    ((_ name fields opt ...)
-     (raise-syntax-error #f
-                         "bad syntax; expected a parenthesized sequence of fields"
-                         stx
-                         #'fields))
-    ((_ name)
-     (raise-syntax-error #f
-                         "bad syntax; missing fields"
-                         stx))
-    ((_)
-     (raise-syntax-error #f
-                         "missing name and fields"
-                         stx))))
+  (syntax-parse stx
+    [(_ name:id (field:fieldspec ...) (~eh-var opt struct-option-alts) ...)
+     (define no-ctr? (and (attribute opt.omit-ctor-kw) #t))
+     (define mutable? (and (attribute opt.mutable-kw) #t))
+     (define no-stx? (and (attribute opt.omit-defstx-kw) #t))
+     (define no-rt? (and (attribute opt.omit-defvals-kw) #t))
+     (define opt-cname (cond [(attribute opt.extra-cname) => list]
+                             [else (attribute opt.cname)]))
+     ;; Note: old impl allows both #:{extra-,}constructor-name and #:omit-constructor
+     (define def-cname
+       (cond [opt-cname (if (pair? opt-cname) (car opt-cname) opt-cname)]
+             [extra-make? #f]
+             [else (car (generate-temporaries #'(name)))]))
+     (define cname
+       (cond [opt-cname (if (pair? opt-cname)
+                            (cons def-cname #'name)
+                            (cons opt-cname opt-cname))]
+             [extra-make? #f]
+             [else (cons def-cname #'name)]))
+     (define self-ctr? (and cname
+                            (bound-identifier=? #'name (cdr cname))
+                            (not no-ctr?)))
+     (cons
+      #`(define-syntaxes (name)
+          #,(let ([e (build-struct-expand-info
+                      #'name (syntax->list #'(field ...))
+                      #f (not mutable?)
+                      #f '(#f) '(#f)
+                      #:omit-constructor? no-ctr?
+                      #:constructor-name def-cname)])
+              (if self-ctr?
+                  #`(make-self-name-struct-info 
+                     (lambda () #,e)
+                     (lambda () (quote-syntax #,def-cname)))
+                  e)))
+      (let ([names (build-struct-names #'name (syntax->list #'(field ...))
+                                       #f (not mutable?)
+                                       #:constructor-name def-cname)])
+        (cond
+          [no-ctr? (cons (car names) (cddr names))]
+          [self-ctr? (cons #`(define-values-for-export (#,def-cname) name) 
+                           names)]
+          [else names])))]))
 
 (module+ compat
   ;; export only for compatibility with `mzlib/unit`
@@ -328,247 +198,120 @@
 (define-signature-form (struct~r stx)
   (do-struct~ stx #f))
 
-(define-signature-form (struct/ctc stx)
-  (parameterize ((error-syntax stx))
-    (syntax-case stx ()
-      ((_ name ([field ctc] ...) . omissions)
-       (let ([omit-selectors #f]
-             [omit-setters #f]
-             [omit-constructor #f]
-             [omit-type #f])
-         (define (remove-ctor&type-info l)
-           (define new-type
-             (if omit-type
-                 #f
-                 (cadr l)))
-           (define new-ctor
-             (if omit-constructor
-                 #f
-                 (caddr l)))
-           (cons (car l)
-                 (cons new-type
-                       (cons new-ctor
-                             (cdddr l)))))
-         (define (add-contracts l)
-           (let* ([pred (caddr l)]
-                  [ctor-ctc #`(-> ctc ... #,pred)]
-                  [pred-ctc #`(-> any/c boolean?)]
-                  [field-ctcs (apply append
-                                     (map (λ (c)
-                                            (append (if omit-selectors
-                                                        null
-                                                        (list #`(-> #,pred #,c)))
-                                                    (if omit-setters
-                                                        null
-                                                        (list #`(-> #,pred #,c void?)))))
-                                          (syntax->list #'(ctc ...))))])
-             (list* (car l)
-                    (list (cadr l) ctor-ctc)
-                    (list pred pred-ctc)
-                    (map list (cdddr l) field-ctcs))))
-         (check-id #'name)
-         (for-each check-id (syntax->list #'(field ...)))
-         (for-each
-          (lambda (omission)
-            (cond
-              ((and (identifier? omission)
-                    (free-identifier=? omission #'-selectors))
-               (set! omit-selectors #t))
-              ((and (identifier? omission)
-                    (free-identifier=? omission #'-setters))
-               (set! omit-setters #t))
-              ((and (identifier? omission)
-                    (free-identifier=? omission #'-constructor))
-               (set! omit-constructor #t))
-              ((and (identifier? omission)
-                    (free-identifier=? omission #'-type))
-               (set! omit-type #t))
-              (else
-               (raise-stx-err
-                "expected \"-selectors\" or \"-setters\" or \"-constructor\" or \"-type\""
-                omission))))
-          (checked-syntax->list #'omissions))
-         (cons
-          #`(define-syntaxes (name)
-              #,(remove-ctor&type-info
-                 (build-struct-expand-info
-                  #'name (syntax->list #'(field ...))
-                  omit-selectors omit-setters
-                  #f '(#f) '(#f))))
-          (let* ([res (add-contracts
-                       (build-struct-names #'name (syntax->list #'(field ...))
-                                           omit-selectors omit-setters #f))]
-                 [cpairs (cons 'contracted (if omit-constructor (cddr res) (cdr res)))])
-            (if omit-type
-                (list cpairs)
-                (list (car res) cpairs))))))
-      ((_ name (x . y) . omissions)
-       ;; Will fail
-       (checked-syntax->list (stx-car (stx-cdr (stx-cdr stx)))))
-      ((_ name fields . omissions)
-       (raise-stx-err "expected syntax matching (identifier ...)" #'fields))
-      ((_ name)
-       (raise-stx-err "missing fields"))
-      ((_)
-       (raise-stx-err "missing name and fields")))))
+(define-signature-form struct/ctc
+  (syntax-parser
+    [(_ name:id ([field:id ctc] ...) o:omission ...)
+     (define omissions (syntax->datum #'(o ...)))
+     (define omit-selectors   (memq '-selectors omissions))
+     (define omit-setters     (memq '-setters omissions))
+     (define omit-constructor (memq '-constructor omissions))
+     (define omit-type        (memq '-type omissions))
+     (define (remove-ctor&type-info l)
+       (define new-type (if omit-type #f (cadr l)))
+       (define new-ctor (if omit-constructor #f (caddr l)))
+       (cons (car l)
+             (cons new-type
+                   (cons new-ctor
+                         (cdddr l)))))
+     (define (add-contracts l)
+       (let* ([pred (caddr l)]
+              [ctor-ctc #`(-> ctc ... #,pred)]
+              [pred-ctc #`(-> any/c boolean?)]
+              [field-ctcs (apply append
+                                 (map (λ (c)
+                                        (append (if omit-selectors
+                                                    null
+                                                    (list #`(-> #,pred #,c)))
+                                                (if omit-setters
+                                                    null
+                                                    (list #`(-> #,pred #,c void?)))))
+                                      (syntax->list #'(ctc ...))))])
+         (list* (car l)
+                (list (cadr l) ctor-ctc)
+                (list pred pred-ctc)
+                (map list (cdddr l) field-ctcs))))
+     (cons
+      #`(define-syntaxes (name)
+          #,(remove-ctor&type-info
+             (build-struct-expand-info
+              #'name (syntax->list #'(field ...))
+              omit-selectors omit-setters
+              #f '(#f) '(#f))))
+      (let* ([res (add-contracts
+                   (build-struct-names #'name (syntax->list #'(field ...))
+                                       omit-selectors omit-setters #f))]
+             [cpairs (cons 'contracted (if omit-constructor (cddr res) (cdr res)))])
+        (if omit-type
+            (list cpairs)
+            (list (car res) cpairs))))]))
 
 ;; Replacement struct/ctc form for `scheme/unit':
 (define-for-syntax (do-struct~/ctc stx extra-make?)
-  (syntax-case stx ()
-    ((_ name ([field ctc] ...) opt ...)
-     (begin
-       (unless (identifier? #'name)
-         (raise-syntax-error #f
-                             "expected an identifier to name the structure type"
-                             stx
-                             #'name))
-       (for-each (lambda (field)
-                   (unless (identifier? field)
-                     (syntax-case field ()
-                       [(id #:mutable)
-                        (identifier? #'id)
-                        'ok]
-                       [_
-                        (raise-syntax-error #f
-                                            "bad field specification"
-                                            stx
-                                            field)])))
-                 (syntax->list #'(field ...)))
-       (let*-values ([(no-ctr? mutable? no-stx? no-rt? opt-cname)
-                      (let loop ([opts (syntax->list #'(opt ...))]
-                                 [no-ctr? #f]
-                                 [mutable? #f]
-                                 [no-stx? #f]
-                                 [no-rt? #f]
-                                 [cname #f])
-                        (if (null? opts)
-                            (values no-ctr? mutable? no-stx? no-rt? cname)
-                            (let ([opt (car opts)])
-                              (case (syntax-e opt)
-                                [(#:constructor-name #:extra-constructor-name)
-                                 (if cname
-                                     (raise-syntax-error #f
-                                                         "redundant option"
-                                                         stx
-                                                         opt)
-                                     (if (null? (cdr opts))
-                                         (raise-syntax-error #f
-                                                             "missing identifier after option"
-                                                             stx
-                                                             opt)
-                                         (if (identifier? (cadr opts))
-                                             (loop (cddr opts) #f mutable? no-stx? no-rt?
-                                                   (if (eq? (syntax-e opt) '#:extra-constructor-name)
-                                                       (list (cadr opts))
-                                                       (cadr opts)))
-                                             (raise-syntax-error #f
-                                                                 "not an identifier for a constructor name"
-                                                                 stx
-                                                                 (cadr opts)))))]
-                                [(#:omit-constructor)
-                                 (if no-ctr?
-                                     (raise-syntax-error #f
-                                                         "redundant option"
-                                                         stx
-                                                         opt)
-                                     (loop (cdr opts) #t mutable? no-stx? no-rt? cname))]
-                                [(#:mutable)
-                                 (if mutable?
-                                     (raise-syntax-error #f
-                                                         "redundant option"
-                                                         stx
-                                                         opt)
-                                     (loop (cdr opts) no-ctr? #t no-stx? no-rt? cname))]
-                                [(#:omit-define-syntaxes)
-                                 (if no-stx?
-                                     (raise-syntax-error #f
-                                                         "redundant option"
-                                                         stx
-                                                         opt)
-                                     (loop (cdr opts) no-ctr? mutable? #t no-rt? cname))]
-                                [(#:omit-define-values)
-                                 (if no-rt?
-                                     (raise-syntax-error #f
-                                                         "redundant option"
-                                                         stx
-                                                         opt)
-                                     (loop (cdr opts) no-ctr? mutable? no-stx? #t cname))]
-                                [else
-                                 (raise-syntax-error #f
-                                                     (string-append
-                                                      "expected a keyword to specify option: "
-                                                      option-keywords)
-                                                     stx
-                                                     opt)]))))]
-                     [(def-cname) (cond
-                                   [opt-cname (if (pair? opt-cname)
-                                                  (car opt-cname)
-                                                  opt-cname)]
-                                   [extra-make? #f]
-                                   [else  ((make-syntax-introducer) #'name)])]
-                     [(cname) (cond
-                               [opt-cname (if (pair? opt-cname)
-                                              (cons def-cname #'name)
-                                              (cons def-cname def-cname))]
-                               [extra-make? #f]
-                               [else (cons def-cname #'name)])]
-                     [(self-ctr?) (and cname (bound-identifier=? #'name (cdr cname)))])
-         (define (add-contracts l)
-           (let* ([pred (caddr l)]
-                  [ctor-ctc #`(-> ctc ... #,pred)]
-                  [pred-ctc #'(-> any/c boolean?)]
-                  [field-ctcs
-                   (apply append
-                          (map (λ (f c)
-                                  (cons #`(-> #,pred #,c)
-                                        (if (and (not mutable?)
-                                                 (not (pair? (syntax-e f))))
-                                            null
-                                            #`(-> #,pred #,c void?))))
-                               (syntax->list #'(field ...))
-                               (syntax->list #'(ctc ...))))])
-             (list* (car l)
-                    (list (cadr l) ctor-ctc)
-                    (list pred pred-ctc)
-                    (map list (cdddr l) field-ctcs))))
-         (cons
-          #`(define-syntaxes (name)
-              #,(let ([e (build-struct-expand-info
-                          #'name (syntax->list #'(field ...))
-                          #f (not mutable?)
-                          #f '(#f) '(#f)
-                          #:omit-constructor? no-ctr?
-                          #:constructor-name def-cname)])
-                  (if self-ctr?
-                      #`(make-self-name-struct-info 
-                         (lambda () #,e)
-                         (lambda () (quote-syntax #,def-cname)))
-                      e)))
-          (let* ([names (add-contracts
-                         (build-struct-names #'name (syntax->list #'(field ...))
-                                             #f (not mutable?)
-                                             #:constructor-name def-cname))]
-                 [cpairs (cons 'contracted
-                               (cond
-                                [no-ctr? (cddr names)]
-                                [else (cdr names)]))]
-                 [l (list (car names) cpairs)])
-            (if self-ctr?
-                (cons #`(define-values-for-export (#,def-cname) name) l)
-                l))))))
-    ((_ name fields opt ...)
-     (raise-syntax-error #f
-                         "bad syntax; expected a parenthesized sequence of fields"
-                         stx
-                         #'fields))
-    ((_ name)
-     (raise-syntax-error #f
-                         "bad syntax; missing fields"
-                         stx))
-    ((_)
-     (raise-syntax-error #f
-                         "missing name and fields"
-                         stx))))
+  (syntax-parse stx
+    [(_ name:id ([field:fieldspec ctc] ...) (~eh-var opt struct-option-alts) ...)
+     (define no-ctr? (and (attribute opt.omit-ctor-kw) #t))
+     (define mutable? (and (attribute opt.mutable-kw) #t))
+     (define no-stx? (and (attribute opt.omit-defstx-kw) #t))
+     (define no-rt? (and (attribute opt.omit-defvals-kw) #t))
+     (define opt-cname (cond [(attribute opt.extra-cname) => list]
+                             [else (attribute opt.cname)]))
+     (define def-cname
+       (cond [opt-cname (if (pair? opt-cname)
+                            (car opt-cname)
+                            opt-cname)]
+             [extra-make? #f]
+             [else  ((make-syntax-introducer) #'name)]))
+     (define cname
+       (cond [opt-cname (if (pair? opt-cname)
+                            (cons def-cname #'name)
+                            (cons def-cname def-cname))]
+             [extra-make? #f]
+             [else (cons def-cname #'name)]))
+     (define self-ctr? (and cname (bound-identifier=? #'name (cdr cname))))
+     (define (add-contracts l)
+       (let* ([pred (caddr l)]
+              [ctor-ctc #`(-> ctc ... #,pred)]
+              [pred-ctc #'(-> any/c boolean?)]
+              [field-ctcs
+               (apply append
+                      (map (λ (f c)
+                             (cons #`(-> #,pred #,c)
+                                   (if (and (not mutable?)
+                                            (not (pair? (syntax-e f))))
+                                       null
+                                       #`(-> #,pred #,c void?))))
+                           (syntax->list #'(field ...))
+                           (syntax->list #'(ctc ...))))])
+         (list* (car l)
+                (list (cadr l) ctor-ctc)
+                (list pred pred-ctc)
+                (map list (cdddr l) field-ctcs))))
+     (cons
+      #`(define-syntaxes (name)
+          #,(let ([e (build-struct-expand-info
+                      #'name (syntax->list #'(field ...))
+                      #f (not mutable?)
+                      #f '(#f) '(#f)
+                      #:omit-constructor? no-ctr?
+                      #:constructor-name def-cname)])
+              (if self-ctr?
+                  #`(make-self-name-struct-info 
+                     (lambda () #,e)
+                     (lambda () (quote-syntax #,def-cname)))
+                  e)))
+      (let* ([names (add-contracts
+                     (build-struct-names #'name (syntax->list #'(field ...))
+                                         #f (not mutable?)
+                                         #:constructor-name def-cname))]
+             [cpairs (cons 'contracted
+                           (cond
+                             [no-ctr? (cddr names)]
+                             [else (cdr names)]))]
+             [l (list (car names) cpairs)])
+        (if self-ctr?
+            (cons #`(define-values-for-export (#,def-cname) name) l)
+            l)))]))
+
 (module+ compat
   ;; export only for compatibility with `mzlib/unit`
   (provide (protect-out struct~s/ctc) struct~r/ctc)
@@ -646,6 +389,125 @@
           make-rename-transformer
           (syntax->list ids))))
 
+
+
+(begin-for-syntax
+  ;; ----------------------------------------
+  ;; from docs for `unit`:
+
+  (define-syntax-class tagged-sig-spec
+    #:attributes ()
+    #:literals (tag)
+    (pattern :sig-spec)
+    (pattern (tag tagname:id spec:sig-spec)))
+
+  (define-syntax-class sig-spec
+    #:attributes ()
+    #:description #f
+    (pattern inner:inner-sig-spec))
+
+  (define-syntax-class inner-sig-spec
+    #:attributes ()
+    #:literals (prefix only except bind-at)
+    (pattern name:sig-id)
+    (pattern (bind-at ??spec-bind spec:sig-spec))
+    (pattern (prefix pfx:id spec:sig-spec))
+    (pattern (only spec:sig-spec only-name:id ...))
+    (pattern (except spec:sig-spec except-name:id ...)))
+
+  (define-splicing-syntax-class init-depends-decl
+    #:attributes ()
+    #:literals (init-depend)
+    (pattern (~seq (init-depend dep:tagged-sig-id ...)))
+    (pattern (~seq)))
+
+  (define-syntax-class sig-id
+    #:attributes (sig) ;; Signature
+    (pattern (~var name (static (lift/maybe-set!-trans signature?) "signature"))
+             #:attr sig ((lift/maybe-set!-trans values) (datum name.value))))
+
+  (define-syntax-class tagged-sig-id
+    #:attributes ()
+    #:literals (tag)
+    (pattern name:sig-id)
+    (pattern (tag tagname:id name:sig-id)))
+
+  (define ((lift/maybe-set!-trans f) v)
+    (if (set!-transformer? v) (f (set!-transformer-procedure v)) (f v)))
+
+  ;; ----------------------------------------
+  ;; from docs for `define-signature`:
+
+  (define-splicing-syntax-class extension-decl
+    #:attributes ()
+    #:literals (extends)
+    (pattern (~seq extends name:sig-id))
+    (pattern (~seq)))
+
+  (define-syntax-class sig-elem
+    #:attributes ()
+    #:literals (define-syntaxes define-values define-values-for-export contracted open struct)
+    (pattern name:id)
+    (pattern (define-syntaxes ~! (name:id ...) rhs:expr))
+    (pattern (define-values ~! (name:id ...) rhs:expr))
+    (pattern (define-values-for-export ~! (name:id ...) rhs:expr))
+    (pattern (contracted ~! [name:id contract:expr] ...))
+    (pattern (~and sig-form (m:sig-form-id . _)))) ;; FIXME: expand
+
+  (define-syntax-class sig-form-id
+    (pattern (~var name (static signature-form*? "signature form"))))
+
+  (define (signature-form*? v)
+    (and (set!-transformer? v)
+         (signature-form? (set!-transformer-procedure v))))
+
+  ;; ----------------------------------------
+  ;; from docs for `compound-unit`:
+
+  (define-syntax-class link-binding
+    #:attributes ()
+    (pattern (name:id (~datum :) sig:tagged-sig-id)))
+
+  (define-syntax-class tagged-link-id
+    #:attributes ()
+    #:literals (tag)
+    (pattern (tag tagname:id linkname:id))
+    (pattern (tag linkname:id)))
+
+  (define-syntax-class linkage-decl
+    #:attributes ()
+    (pattern ((bind:link-binding ...) unit-expr:expr link:tagged-link-id ...)))
+
+  ;; ----------------------------------------
+  ;; from docs for `compound-unit/infer`:
+
+  (define-syntax-class tagged-infer-link-import
+    #:attributes ()
+    (pattern sig:tagged-sig-id)
+    (pattern (link (~datum :) sig:tagged-sig-id)))
+
+  (define-syntax-class tagged-infer-link-export
+    #:attributes ()
+    #:literals (tag)
+    (pattern (tag tagname:id export:infer-link-export))
+    (pattern export:infer-link-export))
+
+  (define-syntax-class infer-link-export
+    #:attributes ()
+    (pattern (~and signame:sig-id ~!))
+    (pattern linkname:id))
+
+  (define-syntax-class infer-linkage-decl
+    #:attributes ()
+    (pattern ((bind:link-binding ...) unitname:unit-id link:tagged-link-id ...))
+    (pattern unitname:unit-id))
+
+  (define-syntax-class unit-id
+    #:attributes ()
+    (pattern (~var name (static (lift/maybe-set!-trans unit-info?) "unit"))))
+
+  )
+
 (define-signature-form (open stx enclosing-intro)
   (define (build-sig-elems ps cs)
     (map (λ (p c)
@@ -654,28 +516,25 @@
                (car p)))
          ps
          cs))
-  (parameterize ([error-syntax stx])
-    (syntax-case stx ()
-      ((_ export-spec)
-       (let ([sig (process-spec #'export-spec)])
-         (with-syntax ([(renames
-                         (((mac-name ...) mac-body) ...) 
-                         (((val-name ...) val-body) ...))
-                        ((build-val+macro-defs enclosing-intro) sig)]
-                       [(((e-post-id ...) . _) ...) (list-ref sig 4)]
-                       [((e-post-rhs ...) (e-ctc ...)) (build-post-val-defs+ctcs sig)])
-           (with-syntax ([(sig-elem ...)
-                          (build-sig-elems (car sig) (syntax->list #'(e-ctc ...)))])
-             (syntax->list
-              #'(sig-elem ...
-                 (define-syntaxes . renames)
-                 (define-syntaxes (mac-name ...) mac-body) ...
-                 (define-values (val-name ...) val-body) ...
-                 (define-values-for-export (e-post-id ...) e-post-rhs)
-                 ...))))))
-      (_
-       (raise-stx-err (format "must match (~a export-spec)"
-                              (syntax-e (stx-car stx))))))))
+  (syntax-parse stx
+    [(_ s:sig-spec)
+     ;; (define sig (datum s.sig))
+     (define sig (process-spec #'s))
+     (with-syntax ([(renames
+                     (((mac-name ...) mac-body) ...) 
+                     (((val-name ...) val-body) ...))
+                    ((build-val+macro-defs enclosing-intro) sig)]
+                   [(((e-post-id ...) . _) ...) (list-ref sig 4)]
+                   [((e-post-rhs ...) (e-ctc ...)) (build-post-val-defs+ctcs sig)])
+       (with-syntax ([(sig-elem ...)
+                      (build-sig-elems (car sig) (syntax->list #'(e-ctc ...)))])
+         (syntax->list
+          #'(sig-elem ...
+             (define-syntaxes . renames)
+             (define-syntaxes (mac-name ...) mac-body) ...
+             (define-values (val-name ...) val-body) ...
+             (define-values-for-export (e-post-id ...) e-post-rhs)
+             ...))))]))
 
 (define-signature-form (define-values-for-export stx)
   (raise-syntax-error #f "internal error" stx))
