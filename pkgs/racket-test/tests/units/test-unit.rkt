@@ -158,7 +158,7 @@
  "define-signature: expected signature form"
  (define-signature x ((define-signature))))
 (test-syntax-error 
- "define-values: bad variable list"
+ "define-signature: expected well-formed `define-values` form" ;; "define-values: bad variable list"
  (define-signature x ((define-values 1 2))))
 (test-syntax-error 
  "define-signature: expected list of results from signature form, got 1"
@@ -166,7 +166,7 @@
    (define-signature-form (a b) 1)
    (define-signature x ((a 1)))))
 (test-syntax-error 
- "define-signature: unknown signature form"
+ "define-signature: expected signature form"
  (let ()
    (define-signature-form a (lambda (b) (list #'(c d))))
    (define-signature x ((a 1)))
