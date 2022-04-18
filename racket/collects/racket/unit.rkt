@@ -647,15 +647,17 @@
 
 ;; XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
-;; build-unit : syntax-object -> 
-;;             (values syntax-object (listof identifier) (listof identifier))
+;; build-unit : Syntax Syntax -> 
+;;             (values Syntax (listof Identifier) (listof Identifier))
 ;; constructs the code for a unit expression.  stx must be
 ;; such that it passes check-unit-syntax.
 ;; The two additional values are the identifiers of the unit's import and export
 ;; signatures
-(define-for-syntax (build-unit stx)
-  (syntax-case stx (import export init-depend)
-    (((import i ...)
+(define-for-syntax (build-unit stx ctx)
+  (syntax-parse stx
+    #:context ctx
+    #:literals (import export init-depend)
+    [((import i ...)
       (export e ...)
       (init-depend id ...)
       . body)
@@ -775,13 +777,13 @@
                                  ...)))))))))
           import-tagged-sigids
           export-tagged-sigids
-          dep-tagged-sigids))))))
+          dep-tagged-sigids)))]))
 
 (define-syntax/err-param (:unit stx)
   (syntax-case stx ()
     ((_ . x)
      (begin
-       (let-values (((u x y z) (build-unit (check-unit-syntax #'x))))
+       (let-values (((u x y z) (build-unit (check-unit-syntax #'x) stx)))
          u)))))
 
 (define-syntax (unit-body stx)
@@ -1067,7 +1069,7 @@
 ;; of another.  stx must be such that it passes check-unit-syntax.
 ;; The two additional values are the identifiers of the unit's import and export
 ;; signatures
-(define-for-syntax (build-unit/new-import-export stx)
+(define-for-syntax (build-unit/new-import-export stx ctx)
   (syntax-case stx (import export init-depend)
     (((import i ...)
       (export e ...)
@@ -1176,7 +1178,7 @@
   (syntax-case stx ()
     ((_ . x)
      (begin
-       (let-values (((u x y z) (build-unit/new-import-export (check-unit-syntax #'x))))
+       (let-values (((u x y z) (build-unit/new-import-export (check-unit-syntax #'x) stx)))
          u)))))
 
 ;; build-compound-unit : syntax-object [static-dep-info] -> 
@@ -1570,7 +1572,7 @@
 ;; such that it passes check-ufc-syntax.
 ;; The two additional values are the identifiers of the unit's import and export
 ;; signatures
-(define-for-syntax (build-unit-from-context stx)
+(define-for-syntax (build-unit-from-context stx ctx)
   (syntax-case stx ()
     ((export-spec)
      (let* ((tagged-export-sig (process-tagged-export #'export-spec))
@@ -1621,7 +1623,7 @@
     ((_ . x)
      (begin
        (check-ufc-syntax #'x)
-       (let-values (((u x y z) (build-unit-from-context #'x)))
+       (let-values (((u x y z) (build-unit-from-context #'x stx)))
          u)))))
 
 
@@ -1712,29 +1714,30 @@
 
 (define-syntax/err-param (define-unit stx)
   (build-define-unit stx (lambda (unit)
-                           (build-unit (check-unit-syntax unit)))
+                           (build-unit (check-unit-syntax unit) stx))
                      "missing unit name, import clause, and export clause"))
 
 (define-syntax/err-param (define-unit/new-import-export stx)
   (build-define-unit stx (lambda (unit)
-                           (build-unit/new-import-export (check-unit-syntax unit)))
+                           (build-unit/new-import-export (check-unit-syntax unit) stx))
                      "missing unit name, import clause, and export clause"))
 
 (define-syntax/err-param (define-compound-unit stx)
   (build-define-unit stx (lambda (clauses)
-                           (build-compound-unit (check-compound-syntax clauses)))
+                           (build-compound-unit (check-compound-syntax clauses) stx))
                      "missing unit name"))
 
 (define-syntax/err-param (define-unit-from-context stx)
   (build-define-unit stx (lambda (sig)
                            (check-ufc-syntax sig)
-                           (build-unit-from-context sig))
+                           (build-unit-from-context sig stx))
                      "missing unit name and signature"))
 
 ;; A marker used when the result of invoking a unit should not be contracted
 (define-for-syntax no-invoke-contract (gensym))
-(define-for-syntax (build-unit/contract stx)
+(define-for-syntax (build-unit/contract stx ctx)
   (syntax-parse stx
+    #:context ctx
     [(:import-clause/contract :export-clause/contract dep:dep-clause :body-clause/contract . bexps)
      (define splicing-body-contract
        (if (eq? (syntax-e #'b) no-invoke-contract) #'() #'(b)))
@@ -1742,7 +1745,8 @@
                    (build-unit
                     (check-unit-syntax
                      (syntax/loc stx
-                       ((import i.s ...) (export e.s ...) dep . bexps))))])
+                       ((import i.s ...) (export e.s ...) dep . bexps)))
+                    ctx)])
        (with-syntax ([name (syntax-local-infer-name (error-syntax))]
                      [(import-tagged-sig-id ...)
                       (map (λ (i s)
@@ -1771,19 +1775,21 @@
     [(ic:import-clause/contract ec:export-clause/contract dep:dep-clause . bexps)
      (build-unit/contract
       (quasisyntax/loc stx
-        (ic ec dep #:invoke/contract #,no-invoke-contract . bexps)))]
+        (ic ec dep #:invoke/contract #,no-invoke-contract . bexps))
+      ctx)]
     [(ic:import-clause/contract ec:export-clause/contract bc:body-clause/contract . bexps)
      (build-unit/contract
       (quasisyntax/loc stx
-        (ic ec (init-depend) #,@(syntax->list #'bc) . bexps)))]
+        (ic ec (init-depend) #,@(syntax->list #'bc) . bexps))
+      ctx)]
     [(ic:import-clause/contract ec:export-clause/contract . bexps)
      (build-unit/contract
       (quasisyntax/loc stx
-        (ic ec (init-depend) #:invoke/contract #,no-invoke-contract . bexps)))]))
+        (ic ec (init-depend) #:invoke/contract #,no-invoke-contract . bexps))
+      ctx)]))
 
 (define-syntax/err-param (define-unit/contract stx)
-  (build-define-unit/contracted stx (λ (stx)
-                                      (build-unit/contract stx))
+  (build-define-unit/contracted stx (λ (ustx) (build-unit/contract ustx stx))
                                 "missing unit name"))
 
 (define-for-syntax (unprocess-tagged-id ti)
@@ -2230,7 +2236,7 @@
       (format "expected syntax matching (~a <define-unit-identifier>) or (~a (link <define-unit-identifier> ...))"
               (syntax-e (stx-car stx)) (syntax-e (stx-car stx))))]))
 
-(define-for-syntax (build-unit/s stx)
+(define-for-syntax (build-unit/s stx ctx)
   (syntax-case stx (import export init-depend)
     [((import i ...) (export e ...) (init-depend d ...) u)
      (let* ([ui (lookup-def-unit #'u)]
@@ -2241,14 +2247,15 @@
                      [(esig ...) (map unprocess (unit-info-export-sig-ids ui))])
          (build-unit/new-import-export
           (syntax/loc stx
-            ((import i ...) (export e ...) (init-depend d ...) ((esig ...) u isig ...))))))]))
+            ((import i ...) (export e ...) (init-depend d ...) ((esig ...) u isig ...)))
+          ctx)))]))
 
 (define-syntax/err-param (define-unit/s stx)
-  (build-define-unit stx (λ (stx) (build-unit/s (check-unit-syntax stx)))
+  (build-define-unit stx (λ (ustx) (build-unit/s (check-unit-syntax ustx) stx))
                      "missing unit name"))
 
 (define-syntax/err-param (unit/s stx)
   (syntax-case stx ()
-    [(_ . stx)
-     (let-values ([(u x y z) (build-unit/s (check-unit-syntax #'stx))])
+    [(_ . ustx)
+     (let-values ([(u x y z) (build-unit/s (check-unit-syntax #'ustx) stx)])
        u)]))
