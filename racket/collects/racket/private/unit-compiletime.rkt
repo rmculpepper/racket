@@ -420,6 +420,7 @@
 
 ;; do-identifier* : identifier sig syntax (box (cons identifier siginfo)) -> sig
 (define (do-identifier* spec sig spec-bind res bind? add-prefix)
+  (unless bind? (error 'do-identifier* "bind? is false: ~e" spec))
   (let* ((vars (signature-vars sig))
          (vals (signature-val-defs sig))
          (stxs (signature-stx-defs sig))
