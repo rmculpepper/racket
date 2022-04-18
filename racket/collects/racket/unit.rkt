@@ -554,13 +554,13 @@
                    (append (reverse (syntax->list #'(z ...))) ctcs))]
             [(define-values (name:id ...) body:expr)
              (define def (cons (syntax->list #'(name ...)) #'body))
-             (loop bindings (cdr sig-elems) (cons def val-defs) stx-defs post-val-defs ctcs)]
+             (loop (cdr sig-elems) bindings (cons def val-defs) stx-defs post-val-defs ctcs)]
             [(define-syntaxes (name:id ...) body:expr)
              (define def (cons (syntax->list #'(name ...)) #'body))
-             (loop bindings (cdr sig-elems) val-defs (cons def stx-defs) post-val-defs ctcs)]
+             (loop (cdr sig-elems) bindings val-defs (cons def stx-defs) post-val-defs ctcs)]
             [(define-values-for-export (name:id ...) body:expr)
              (define def (cons (syntax->list #'(name ...)) #'body))
-             (loop bindings (cdr sig-elems) val-defs stx-defs (cons def post-val-defs) ctcs)])]))]))
+             (loop (cdr sig-elems) bindings val-defs stx-defs (cons def post-val-defs) ctcs)])]))]))
 
 ;; XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
