@@ -144,7 +144,8 @@
 ;; Replacement `struct' signature form for `scheme/unit':
 (define-for-syntax (do-struct~ stx extra-make?)
   (syntax-parse stx
-    [(_ name:id (field:fieldspec ...) (~eh-var opt struct-option-alts) ...)
+    [(_ name:id (~describe "field-specs" (field:fieldspec ...))
+        (~eh-var opt struct-option-alts) ...)
      (define no-ctr? (and (attribute opt.omit-ctor-kw) #t))
      (define mutable? (and (attribute opt.mutable-kw) #t))
      (define no-stx? (and (attribute opt.omit-defstx-kw) #t))
