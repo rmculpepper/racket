@@ -138,10 +138,14 @@
     #:attributes () #:no-delimit-cut
     #:literals (define-syntaxes define-values define-values-for-export contracted)
     (pattern name:id #:attr expand (lambda (intro) (list #'name)))
-    (pattern (define-syntaxes ~! (name:id ...) rhs:expr))
-    (pattern (define-values ~! (name:id ...) rhs:expr))
-    (pattern (define-values-for-export ~! (name:id ...) rhs:expr))
-    (pattern (contracted ~! [name:id contract:expr] ...)))
+    (pattern (~describe "well-formed `define-syntaxes` form"
+                        (define-syntaxes ~! (name:id ...) rhs:expr)))
+    (pattern (~describe "well-formed `define-values` form"
+                        (define-values ~! (name:id ...) rhs:expr)))
+    (pattern (~describe "well-formed `define-values-for-export` form"
+                        (define-values-for-export ~! (name:id ...) rhs:expr)))
+    (pattern (~describe "well-formed `contracted` form"
+                        (contracted ~! [name:id contract:expr] ...))))
 
   (define-syntax-class sig-form-id
     #:attributes (name value)
