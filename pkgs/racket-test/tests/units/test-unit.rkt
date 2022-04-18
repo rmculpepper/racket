@@ -1276,19 +1276,19 @@
  "struct: expected identifier"
  (define-signature x ((struct 1 ()))))
 (test-syntax-error 
- "struct: bad syntax; expected a parenthesized sequence of fields"
+ "struct: expected field-specs"
  (define-signature x ((struct n (x . y)))))
 (test-syntax-error 
- "struct: bad syntax; expected a parenthesized sequence of fields"
+ "struct: expected field-specs"
  (define-signature x ((struct n 1))))
 (test-syntax-error 
- "struct: expected a keyword to specify option: #:mutable, #:constructor-name, #:extra-constructor-name, #:omit-constructor, #:omit-define-syntaxes, or #:omit-define-values"
+ "struct: expected one of these literals"
  (define-signature x ((struct n () t))))
 (test-syntax-error 
  "struct: bad syntax"
  (define-signature x ((struct n () . -selectors))))
 (test-syntax-error 
- "struct: expected a keyword to specify option: #:mutable, #:constructor-name, #:extra-constructor-name, #:omit-constructor, #:omit-define-syntaxes, or #:omit-define-values"
+ "struct: expected one of these literals"
  (define-signature x ((struct n () x))))
 
 (let ()
