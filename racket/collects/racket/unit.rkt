@@ -521,7 +521,7 @@
                           (void)))
                       (values))))))]
          [(pair? (car sig-elems))
-          (define transformer (car (car sig-elems)))
+          (define transformer (signature-form-f (car (car sig-elems))))
           (define sig-form (cdr (car sig-elems)))
           (define results (transformer sig-form intro))
           (unless (list? results)
