@@ -3,7 +3,9 @@
 
 (provide only except prefix rename tag
          import export init-depend link
-         extends contracted)
+         extends contracted
+
+         bind-at define-values-for-export)
 
 (define-syntax-rule (define-syntax-for-error name message)
   (define-syntax name
@@ -36,3 +38,8 @@
   "misuse of define-signature keyword")
 (define-syntax-for-error contracted
   "misuse of define-signature keyword")
+
+(define-syntax-for-error define-values-for-export
+  "misuse of define-values-for-export keyword")
+(define-syntax-for-error bind-at
+  "misuse of bind-at keyword")

@@ -5,8 +5,6 @@
   
 (provide (all-defined-out))
 
-(define bind-at #f)
-
 (define error-syntax (make-parameter #f #f 'error-syntax))
 (define raise-stx-err
   (case-lambda

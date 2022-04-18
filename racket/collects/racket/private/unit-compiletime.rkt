@@ -22,7 +22,6 @@
          map-sig split-requires split-requires* apply-mac complete-exports complete-imports check-duplicate-subs
          process-spec
          make-relative-introducer
-         bind-at
          build-init-depend-property)
 
 (define-syntax (apply-mac stx)
