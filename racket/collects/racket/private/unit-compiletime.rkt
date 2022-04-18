@@ -102,7 +102,8 @@
 
   (define-syntax-class sig-id
     #:attributes (sig) ;; Signature
-    (pattern (~var name (static (lift/maybe-set!-trans signature?) "signature"))
+    #:opaque #:description "signature-id"
+    (pattern (~var name (static (lift/maybe-set!-trans signature?) "signature-id"))
              #:attr sig ((lift/maybe-set!-trans values) (datum name.value))))
 
   (define-syntax-class tagged-sig-id

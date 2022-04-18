@@ -437,7 +437,7 @@
 (define-syntax (define-signature stx)
   (syntax-parse stx
     #:literals (extends)
-    [(_ sig-name:id super:maybe-extends-sig (se:sig-elem ...))
+    [(_ sig-name:id super:maybe-extends-sig (~describe "sig-elems" (se:sig-elem ...)))
      (define sigid #'sig-name)
      (define super-sigid (datum super.name))
      (define super-sig (datum super.sig))
