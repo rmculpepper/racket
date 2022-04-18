@@ -87,10 +87,10 @@
  "misuse of define-signature keyword"
  contracted)
 (test-syntax-error
- "expected a list of [id contract]"
+ "expected well-formed `contracted` form"
   (define-signature x ((contracted x y))))
 (test-syntax-error
- "expected a list of [id contract]"
+ "expected identifier"
   (define-signature x ((contracted [(-> number? number?) x]))))
 
 (test-syntax-error
