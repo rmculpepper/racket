@@ -1,11 +1,13 @@
 #lang racket/base
 
-(require syntax/stx)
+(require syntax/stx
+         (only-in racket/syntax current-syntax-context))
 (require (for-template "unit-keywords.rkt"))
   
 (provide (all-defined-out))
 
-(define error-syntax (make-parameter #f #f 'error-syntax))
+(define error-syntax current-syntax-context)
+
 (define raise-stx-err
   (case-lambda
     ((msg) (raise-syntax-error #f msg (error-syntax)))
