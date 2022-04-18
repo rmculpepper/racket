@@ -528,7 +528,12 @@
             (raise-stx-err
              (format "expected list of results from signature form, got ~e" results)
              sig-form))
-          (loop (append results (cdr sig-elems))
+          (loop (append (map (lambda (result)
+                               (syntax-parse result
+                                 #:context stx
+                                 [se:sig-elem (datum se.ast)]))
+                             results)
+                        (cdr sig-elems))
                 bindings
                 val-defs
                 stx-defs
@@ -536,6 +541,7 @@
                 ctcs)]
          [else
           (syntax-parse (car sig-elems)
+            #:context stx
             #:literals (define-values define-syntaxes define-values-for-export contracted)
             [x:id
              (loop (cdr sig-elems) (cons #'x bindings) val-defs stx-defs post-val-defs (cons #f ctcs))]
