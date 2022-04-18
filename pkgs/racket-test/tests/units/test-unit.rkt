@@ -107,34 +107,34 @@
 
 ;; define-signature syntax-errors
 (test-syntax-error 
- "expected syntax matching" 
+ "expected more terms"
  (define-signature))
 (test-syntax-error 
- "expected syntax matching"
+ "expected more terms"
  (define-signature x))
 (test-syntax-error 
- "expected syntax matching"
+ "unexpected term"
  (define-signature x (a b) 1))
 (test-syntax-error 
- "not an identifier"
+ "expected identifier"
  (define-signature 1 (a b)))
 (test-syntax-error 
- "not an identifier"
+ "expected signature-id"
  (define-signature x extends 1 (a b)))
 (test-syntax-error 
- "unknown signature"
+ "expected signature-id"
  (define-signature x extends y12 (a b)))
 (test-syntax-error 
- "unknown signature"
+ "expected signature-id"
  (let () (define-signature x extends x (a b))))
 (test-syntax-error 
- "not an identifier"
+ "expected identifier"
  (define-signature (a . b) (a b)))
 (test-syntax-error 
- "expected syntax matching"
+ ""
  (define-signature b . (a b)))
 (test-syntax-error 
- "bad syntax (illegal use of `.')"
+ ""
  (define-signature b (a b) . 2))
 (test-syntax-error 
  "set!: illegal use of signature name"
@@ -142,20 +142,20 @@
    (define-signature a (a))
    (set! a 1)))
 (test-syntax-error 
- "expected syntax matching"
+ ""
  (define-signature x y))
 (test-syntax-error 
- "define-signature: expected either an identifier or signature form"
+ "define-signature: expected sig-elem"
  (define-signature x (1)))
 
 (test-syntax-error 
- "define-signature: bad syntax (illegal use of `.')"
+ "expected sig-elems"
  (define-signature x (a . b)))
 (test-syntax-error 
- "define-signature: unknown signature form"
+ "define-signature: expected signature form"
  (define-signature x ((a))))
 (test-syntax-error 
- "define-signature: not a signature form"
+ "define-signature: expected signature form"
  (define-signature x ((define-signature))))
 (test-syntax-error 
  "define-values: bad variable list"
