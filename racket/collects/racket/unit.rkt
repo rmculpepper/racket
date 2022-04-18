@@ -427,6 +427,30 @@
 ;; XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 (begin-for-syntax
+  (define-syntax-class sig-elem
+    #:attributes (ast) ;; (U Syntax[core-sig-elem] (cons signature-form? Syntax))
+    (pattern core:core-sig-elem #:cut
+             #:attr ast #'core)
+    (pattern (~and sig-form (m:sig-form-id . _))
+             #:attr ast (cons (datum m.value) #'sig-form)))
+  (define-syntax-class core-sig-elem
+    #:attributes () #:no-delimit-cut
+    #:literals (define-syntaxes define-values define-values-for-export contracted)
+    (pattern name:id #:attr expand (lambda (intro) (list #'name)))
+    (pattern (~describe "well-formed `define-syntaxes` form"
+                        (define-syntaxes ~! (name:id ...) rhs:expr)))
+    (pattern (~describe "well-formed `define-values` form"
+                        (define-values ~! (name:id ...) rhs:expr)))
+    (pattern (~describe "well-formed `define-values-for-export` form"
+                        (define-values-for-export ~! (name:id ...) rhs:expr)))
+    (pattern (~describe "well-formed `contracted` form"
+                        (contracted ~! [name:id contract:expr] ...))))
+  (define-syntax-class sig-form-id
+    #:attributes (name value)
+    #:literals (struct~)
+    (pattern (~var name (static (lift/maybe-set!-trans signature-form?) "signature form"))
+             #:cut #:attr value ((lift/maybe-set!-trans values) (datum name.value)))
+    (pattern struct~ #:with :sig-form-id #'struct~r)) ;; redirect struct~ to struct~r
   (define-splicing-syntax-class maybe-extends-sig
     #:attributes (name sig)
     #:description "extends clause"
