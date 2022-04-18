@@ -72,13 +72,13 @@
 
 ;; define-signature-forms syntax errors
 (test-syntax-error 
- "bad syntax"
+ "expected more terms"
  (define-signature-form))
 (test-syntax-error 
- "bad syntax"
+ "expected more terms"
  (define-signature-form (a b)))
 (test-syntax-error 
- "bad syntax"
+ "unexpected term"
  (define-signature-form (a b c d) 1 2))
 (test-syntax-error 
  "bad syntax"
@@ -93,12 +93,12 @@
  "bad syntax"
  (define-signature-form 1 2))
 (test-syntax-error 
- "bad syntax"
+ "unexpected term"
  (define-signature-form a 2 3))
-(test-syntax-error "define-signature-form: not an identifier"
+(test-syntax-error "define-signature-form: expected identifier"
                    (define-signature-form (1 a) 1))
 (test-syntax-error 
- "not an identifier"
+ "expected identifier"
  (define-signature-form (a 1) 1))
 (test-syntax-error 
  "bad syntax"
@@ -1267,13 +1267,13 @@
 
 
 ;; Test the struct form
-(test-syntax-error "struct: missing name and fields"
+(test-syntax-error "struct: expected more terms"
                    (define-signature x ((struct))))
 (test-syntax-error 
- "struct: bad syntax; missing fields"
+ "struct: expected more terms"
  (define-signature x ((struct n))))
 (test-syntax-error 
- "struct: expected an identifier to name the structure type"
+ "struct: expected identifier"
  (define-signature x ((struct 1 ()))))
 (test-syntax-error 
  "struct: bad syntax; expected a parenthesized sequence of fields"
