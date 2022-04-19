@@ -6,12 +6,13 @@
   
 (provide (all-defined-out))
 
-(define error-syntax current-syntax-context)
+(define error-syntax (make-parameter #f))
+(define (get-error-syntax) (or (error-syntax) (current-syntax-context)))
 
 (define raise-stx-err
   (case-lambda
-    ((msg) (raise-syntax-error #f msg (error-syntax)))
-    ((msg stx) (raise-syntax-error #f msg (error-syntax) stx))))
+    ((msg) (raise-syntax-error #f msg (get-error-syntax)))
+    ((msg stx) (raise-syntax-error #f msg (get-error-syntax) stx))))
 
 ;; check-id: syntax-object -> identifier
 (define (check-id id)
