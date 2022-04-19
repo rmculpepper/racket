@@ -241,7 +241,7 @@
       (let* ([res (add-contracts
                    (build-struct-names #'name (syntax->list #'(field ...))
                                        omit-selectors omit-setters #f))]
-             [cpairs (cons 'contracted (if omit-constructor (cddr res) (cdr res)))])
+             [cpairs (cons #'contracted (if omit-constructor (cddr res) (cdr res)))])
         (if omit-type
             (list cpairs)
             (list (car res) cpairs))))]))
@@ -304,7 +304,7 @@
                      (build-struct-names #'name (syntax->list #'(field ...))
                                          #f (not mutable?)
                                          #:constructor-name def-cname))]
-             [cpairs (cons 'contracted
+             [cpairs (cons #'contracted
                            (cond
                              [no-ctr? (cddr names)]
                              [else (cdr names)]))]
