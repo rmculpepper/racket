@@ -627,7 +627,7 @@
 (define-for-syntax (make-import-make-unboxing var renamings loc ctc)
   (if ctc
       (with-syntax ([ctc-stx (syntax-property ctc 'inferred-name var)])
-        (quasisyntax/loc (error-syntax)
+        (quasisyntax/loc (get-error-syntax)
           (lambda (stx)
             (with-syntax ([app (datum->syntax (quote-syntax here)
                                               (list (quote-syntax #,loc))
@@ -639,7 +639,7 @@
                                       (quote #,var) (quote-srcloc #,var))
                             (error 'unit "contracted import ~a used before definition"
                                    (quote #,(syntax->datum var))))))))))
-      (quasisyntax/loc (error-syntax)
+      (quasisyntax/loc (get-error-syntax)
         (lambda (stx)
           (datum->syntax (quote-syntax here)
                          (list (quote-syntax #,loc))
@@ -717,14 +717,14 @@
                      [(export-name ...)
                       (map (lambda (tag/info) (car (siginfo-names (cdr tag/info))))
                            export-tagged-infos)]
-                     [name (syntax-local-infer-name (error-syntax))]
+                     [name (syntax-local-infer-name (get-error-syntax))]
                      [(icount ...) (map
                                     (lambda (import) (length (car import)))
                                     import-sigs)])
          (values
           (syntax-protect
           (intro
-           (quasisyntax/loc (error-syntax)
+           (quasisyntax/loc (get-error-syntax)
             (make-unit
              'name
              (vector-immutable (cons 'import-name
@@ -748,7 +748,7 @@
                                                                               (quote-syntax #,iv))))
                                                                         (syntax->list e-ivs)
                                                                         (syntax->list ivs))])
-                                                      (quasisyntax/loc (error-syntax)
+                                                      (quasisyntax/loc (get-error-syntax)
                                                         [#,ivs
                                                          (make-id-mappers
                                                           #,@(map (lambda (iv l c)
@@ -763,7 +763,7 @@
                                          (letrec-syntaxes+values (renames ...
                                                                   mac ... ...)
                                            (val ... ...)
-                                           (unit-body #,(error-syntax)
+                                           (unit-body #,(get-error-syntax)
                                                       (int-ivar ... ...)
                                                       (int-evar ... ...)
                                                       (eloc ... ...)
@@ -1133,11 +1133,11 @@
                        [(orig-export-name ...)
                         (map (lambda (tag/info) (car (siginfo-names (cdr tag/info))))
                              orig-export-tagged-infos)]
-                       [name (syntax-local-infer-name (error-syntax))]
-                       [form (syntax-e (stx-car (error-syntax)))])
+                       [name (syntax-local-infer-name (get-error-syntax))]
+                       [form (syntax-e (stx-car (get-error-syntax)))])
            (values
             (syntax-protect
-            (quasisyntax/loc (error-syntax)
+            (quasisyntax/loc (get-error-syntax)
               (let ([unit-tmp unit-exp])
                 (check-unit unit-tmp 'form)
                 (check-sigs unit-tmp
@@ -1299,7 +1299,7 @@
          
          (with-syntax (((sub-tmp ...) (generate-temporaries #'(sub-exp ...)))
                        ((sub-export-table-tmp ...) sub-export-table-tmps)
-                       (name (syntax-local-infer-name (error-syntax)))
+                       (name (syntax-local-infer-name (get-error-syntax)))
                        (((import-key ...) ...)
                         (map
                          (lambda (t l) 
@@ -1354,7 +1354,7 @@
                                (cons (lnkid-record-sigid s)
                                      (lnkid-record-access-code s)))
                              (syntax->list #'(export-lnkid ...))))
-                       (form (syntax-e (stx-car (error-syntax))))
+                       (form (syntax-e (stx-car (get-error-syntax))))
                        )
            
            (with-syntax (((check-sub-exp ...)
@@ -1429,7 +1429,7 @@
               ;; will contain an empty list.
               (syntax-protect
               (syntax-property
-               (quasisyntax/loc (error-syntax)
+               (quasisyntax/loc (get-error-syntax)
                  (let ([deps '()]
                        [sub-tmp sub-exp] ...)
                    check-sub-exp ...
@@ -1634,14 +1634,14 @@
       ((_ name . rest)
        (begin
          (check-id #'name)
-         (let-values (((exp i e d) (parameterize ([error-syntax (syntax-property (error-syntax) 'inferred-name (syntax-e #'name))])
+         (let-values (((exp i e d) (parameterize ([error-syntax (syntax-property (get-error-syntax) 'inferred-name (syntax-e #'name))])
                                      (build #'rest))))
            (with-syntax ((((itag . isig) ...) i)
                          (((etag . esig) ...) e)
                          (((deptag . depsig) ...) d)
                          (contracted? contracted?))
              (syntax-protect
-              (quasisyntax/loc (error-syntax)
+              (quasisyntax/loc (get-error-syntax)
                 (begin
                   (define u #,exp)
                   (define-syntax name
@@ -1685,7 +1685,7 @@
                       (map check-helper tagged-import-infos))
                      (((export-name . (export-keys ...)) ...)
                       (map check-helper tagged-export-infos))
-                     (form (stx-car (error-syntax))))
+                     (form (stx-car (get-error-syntax))))
          (values
           (syntax-protect
            #`(let ([unit-tmp unit-exp])
@@ -1747,7 +1747,7 @@
                      (syntax/loc stx
                        ((import i.s ...) (export e.s ...) dep . bexps)))
                     ctx)])
-       (with-syntax ([name (syntax-local-infer-name (error-syntax))]
+       (with-syntax ([name (syntax-local-infer-name (get-error-syntax))]
                      [(import-tagged-sig-id ...)
                       (map (λ (i s)
                              (if (identifier? i) #`(tag #,i #,s) s))
@@ -2156,8 +2156,8 @@
                          [(isig ...) isig])
              (syntax-protect
               (if define?
-                  (syntax/loc (error-syntax) (define-values/invoke-unit u (import isig ...) (export esig ...)))
-                  (syntax/loc (error-syntax) (invoke-unit u (import isig ...)))))))]
+                  (syntax/loc (get-error-syntax) (define-values/invoke-unit u (import isig ...) (export esig ...)))
+                  (syntax/loc (get-error-syntax) (invoke-unit u (import isig ...)))))))]
         [(list? units)
          (let-values ([(isig esig) (imps/exps-from-units units exports)])
            (with-syntax ([(new-unit) (generate-temporaries '(new-unit))]
@@ -2173,10 +2173,10 @@
                                 u)])
                (syntax-protect
                 (if define?
-                    (syntax/loc (error-syntax)
+                    (syntax/loc (get-error-syntax)
                       (define-values/invoke-unit u
                         (import isig ...) (export esig ...)))
-                    (syntax/loc (error-syntax)
+                    (syntax/loc (get-error-syntax)
                       (invoke-unit u
                                    (import isig ...))))))))]
         ;; just for error handling
