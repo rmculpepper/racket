@@ -217,6 +217,9 @@
   (define (reorder to-iattrs from-iattrs p head-pattern?)
     (cond [(make-reordering to-iattrs from-iattrs)
            => (lambda (reordering)
+                (log-syntax-parse-debug "reordering ~s=>~s: ~v"
+                                        (length from-iattrs) (length to-iattrs)
+                                        reordering)
                 (if head-pattern?
                     (D #`(h-reorder (quote #,reordering) #,(F p)))
                     (D #`(s-reorder (quote #,reordering) #,(F p)))))]
