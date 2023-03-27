@@ -642,9 +642,19 @@
     (define no-fail? (patterns-cannot-fail? patterns))
     (when (and no-fail? ctx) (log-syntax-parse-debug "cannot fail: ~e" ctx))
     (define clause-ps
-      (for/list ([p (in-list patterns)] [expr (in-list body-exprs)])
+      (for/list ([p (in-list patterns)] [expr (in-list body-exprs)] [index (in-naturals 1)])
         (define bind-p (action:bind result-attr #`(lambda () #,expr)))
-        (pat:and (list p (pat:action bind-p (pat:any))))))
+        (define-values (main-p actions) (decompose-action-and p))
+        (compose-action-and
+         main-p
+         (cond [(pair? actions)
+                ;; Insert dummy ~do pattern to force reflection
+                ;; FIXME: better criterion (eg, have non-trivial exprs)
+                (log-syntax-parse-debug "inserting dummy ~do pattern for clause ~s/~s"
+                                        index (length patterns))
+                (define dummy-do-p (action:do (list #'(void))))
+                (append (list dummy-do-p) actions (list bind-p))]
+               [else (list bind-p)]))))
     (define parser
       (cond [(let ([rows (for/list ([p (in-list clause-ps)])
                            (row1 null (list p) #'values))])
@@ -657,4 +667,19 @@
                   [parser parser])
       #`(run-clauses
          (quote who) context x (quote #,no-fail?) (quote #,track-literals?)
-         (let-values () def ... parser)))))
+         (let-values () def ... parser))))
+
+  (define (decompose-action-and p)
+    (define (is-action? p) (match p [(pat:action ap (pat:any)) #t] [_ #f]))
+    (let loop ([p p] [actions null])
+      (match p
+        [(pat:and (cons p1 ps))
+         (cond [(andmap is-action? ps)
+                (loop p1 (append (map pat:action-action ps) actions))]
+               [else
+                (values p actions)])]
+        [_ (values p actions)])))
+
+  (define (compose-action-and p actions)
+    (cond [(null? actions) p]
+          [else (pat:and (cons p (map action-pattern->single-pattern actions)))])))
