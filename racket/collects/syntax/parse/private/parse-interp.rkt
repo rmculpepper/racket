@@ -239,24 +239,28 @@
                     (D #`(s-reorder (quote #,reordering) #,(F p)))))]
           [else p]))
 
+  (define (attr=? a1 a2)
+    (and a1 a2 (bound-identifier=? (attr-name a1) (attr-name a2))))
+
   (define (make-reordering to-iattrs from-iattrs)
-    (define (attr=? a1 a2) (and a1 a2 (bound-identifier=? (attr-name a1) (attr-name a2))))
     (cond [(and (null? to-iattrs) (null? from-iattrs))
            #f]
           [(and (pair? to-iattrs) (pair? from-iattrs)
                 (attr=? (car to-iattrs) (car from-iattrs)))
            (make-reordering (cdr to-iattrs) (cdr from-iattrs))]
-          [else
-           (define r-to-iattrs (reverse to-iattrs))
-           (define r-from-iattrs (reverse from-iattrs))
-           (define add-n (length r-to-iattrs))
-           (define reassignment
-             (for/vector ([from-a (in-list r-from-iattrs)])
-               (for/or ([to-idx (in-naturals)]
-                        [to-a (in-list r-to-iattrs)]
-                        #:when (attr=? from-a to-a))
-                 to-idx)))
-           (cons add-n reassignment)]))
+          [else (make-reordering* to-iattrs from-iattrs)]))
+
+  (define (make-reordering* to-iattrs from-iattrs)
+    (define r-to-iattrs (reverse to-iattrs))
+    (define r-from-iattrs (reverse from-iattrs))
+    (define add-n (length r-to-iattrs))
+    (define reassignment
+      (for/vector ([from-a (in-list r-from-iattrs)])
+        (for/or ([to-idx (in-naturals)]
+                 [to-a (in-list r-to-iattrs)]
+                 #:when (attr=? from-a to-a))
+          to-idx)))
+    (cons add-n reassignment))
 
   (define (first-desc-s sp)
     (match sp
