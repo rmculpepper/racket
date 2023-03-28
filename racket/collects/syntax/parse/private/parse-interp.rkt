@@ -119,7 +119,9 @@
                      [bind-name? (and name #t)]
                      [bind-nested? (pair? nested-attrs)]
                      [-args+role (wrap-exprs aenv (append (argu->exprs argu) (list role)))])
-         #'(s-parser (lambda () parser) -args+role (quote bind-name?) (quote bind-nested?)))]
+         (if (already-defined? #'parser)
+             #'(s-parser parser -args+role (quote bind-name?) (quote bind-nested?))
+             #'(s-parser/delay (λ () parser) -args+role (quote bind-name?) (quote bind-nested?))))]
       [(pat:reflect obj argu attr-decls name nested-attrs)
        (with-syntax ([bind-name? (and name #t)]
                      [attr-decls attr-decls]
@@ -210,6 +212,18 @@
          #'(s-simple (quote simple)))]
       [(pat:seq-end)
        #'s-seq-end]))
+
+  ;; already-defined? : Identifier -> Boolean
+  ;; Indicates whether the name is guaranteed to already be defined.
+  ;; That is, #f for forward references.
+  (define (already-defined? ref-id)
+    ;; current approximation: #t if imported from another module
+    ;; FIXME: better approximation
+    (match (identifier-binding ref-id)
+      [(cons from-mod _)
+       (define-values (modpath relto) (module-path-index-split from-mod))
+       (and modpath #t)]
+      [_ #f]))
 
   ;; A Reordering is (cons Nat (vector Nat/#f ...))
   ;; eg (cons N (vector K_1 ... K_M)) means drop M, add N, each K_i in [0..N-1] unique or #f
@@ -405,7 +419,9 @@
                      [bind-name? (and name #t)]
                      [bind-nested? (pair? nested-attrs)]
                      [-args+role (wrap-exprs aenv (append (argu->exprs argu) (list role)))])
-         #'(h-parser (lambda () parser) -args+role (quote bind-name?) (quote bind-nested?)))]
+         (if (already-defined? #'parser)
+             #'(h-parser parser -args+role (quote bind-name?) (quote bind-nested?))
+             #'(h-parser/delay (λ () parser) -args+role (quote bind-name?) (quote bind-nested?))))]
       [(hpat:reflect obj argu attr-decls name nested-attrs)
        (with-syntax ([bind-name? (and name #t)]
                      [attr-decls attr-decls]
