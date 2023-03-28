@@ -122,7 +122,8 @@
 (define ((p-post p) x cx pr es renv)
   (p x cx (ps-add-post pr) es renv))
 
-(define (apply-reordering reo renv)
+;; apply-reordering* : Reordering REnv -> (values Vector REnv)
+(define (apply-reordering* reo renv)
   (match reo
     [(cons n mapping)
      (define vec (make-vector n #f))
@@ -132,12 +133,33 @@
                   [v (in-list renv)])
          (when idx (vector-set! vec idx v))
          (cdr renv)))
-     (append (vector->list vec) renv-base)]))
+     (values vec renv-base)]))
 
+;; apply-reordering : Reordering REnv -> REnv
+(define (apply-reordering reo renv)
+  (define-values (vec renv-base) (apply-reordering* reo renv))
+  (append-vector vec renv-base))
+
+;; reordering : Reordering -> REnv -> Renv
 (define ((reordering reo) renv)
   (apply-reordering reo renv))
 
 (define (stx-e v) (if (syntax? v) (syntax-e v) v))
+
+(define (append-reverse xs base)
+  ;; = (append (reverse xs) base)
+  (for/fold ([base base]) ([x (in-list xs)])
+    (cons x base)))
+
+(define (append-vector vec base)
+  ;; = (append (vector->list vec) base)
+  (for/fold ([base base]) ([index (in-range (sub1 (vector-length vec)) -1 -1)])
+    (cons (vector-ref vec index) base)))
+
+(define (append-reverse-vector vec base)
+  ;; = (append (reverse (vector->list vec)) base)
+  (for/fold ([base base]) ([elem (in-vector vec)])
+    (cons elem base)))
 
 ;; ----------------------------------------
 ;; s : SinglePattern
@@ -155,7 +177,7 @@
   (define (sk/parser fh us . avs)
     (sk fh cp us
         (let* ([renv (if bind-name? (cons (datum->syntax cx x cx) renv) renv)]
-               [renv (if bind-nested? (append (reverse avs) renv) renv)])
+               [renv (if bind-nested? (append-reverse avs renv) renv)])
           renv)))
   (kwapply parser kws kwargs x cx pr es us fh cp role sk/parser pargs))
 
@@ -512,7 +534,7 @@
     (define (get-list) (stx-list-take x (ps-difference pr rpr)))
     (sk fh cp us
         (let* ([renv (if bind-name? (cons (get-list) renv) renv)]
-               [renv (if bind-nested? (append (reverse avs) renv) renv)])
+               [renv (if bind-nested? (append-reverse avs renv) renv)])
           renv)
         rx rcx rpr))
   (kwapply parser kws kwargs x cx pr es us fh cp role sk/parser pargs))
