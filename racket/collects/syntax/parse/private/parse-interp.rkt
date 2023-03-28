@@ -38,17 +38,17 @@
 
   (define SIMPLIFY? #t)
 
-  ;; compile-pattern : SinglePattern -> Expr[SMatcher]
-  (define (compile-pattern p) (compile-*pattern p compile-s))
+  ;; compile-pattern : SinglePattern [AEnv] -> Expr[SMatcher]
+  (define (compile-pattern p [aenv null]) (compile-*pattern p compile-s aenv))
 
-  ;; compile-hpattern : HeadPattern -> Expr[HMatcher]
-  (define (compile-hpattern hp) (compile-*pattern hp compile-h))
+  ;; compile-hpattern : HeadPattern [AEnv] -> Expr[HMatcher]
+  (define (compile-hpattern hp [aenv null]) (compile-*pattern hp compile-h aenv))
 
-  ;; compile-*pattern : *Pattern (*Pattern -> Expr[*Matcher]) -> Expr[*Matcher]
-  (define (compile-*pattern p compile-p)
+  ;; compile-*pattern : *Pattern (*Pattern -> Expr[*Matcher]) [AEnv] -> Expr[*Matcher]
+  (define (compile-*pattern p compile-p [aenv null])
     (define p* (if SIMPLIFY? (simplify p) p))
     ;; (pretty-print p*)
-    (define stx (with-reset-bundle (lambda () (F (compile-p p* null)))))
+    (define stx (with-reset-bundle (lambda () (F (compile-p p* aenv)))))
     ;; (pretty-print (syntax->datum stx))
     stx)
 
@@ -119,7 +119,7 @@
                      [bind-name? (and name #t)]
                      [bind-nested? (pair? nested-attrs)]
                      [-args+role (wrap-exprs aenv (append (argu->exprs argu) (list role)))])
-         #'(s-parser parser -args+role (quote bind-name?) (quote bind-nested?)))]
+         #'(s-parser (lambda () parser) -args+role (quote bind-name?) (quote bind-nested?)))]
       [(pat:reflect obj argu attr-decls name nested-attrs)
        (with-syntax ([bind-name? (and name #t)]
                      [attr-decls attr-decls]
@@ -374,7 +374,7 @@
        (define b2 (new-bundle))
        (define proc-expr
          (D (with-syntax ([(stmt ...) stmts]
-                          [(expr ...) (map F (reverse (bundle-rexprs b2)))])
+                          [(expr ...) (bundle-exprs b2)])
               #'(lambda () (no-shadow stmt) ... (vector expr ...)))))
        (define -proc (bundle! aenv (D (wrap-exprs aenv (list (F proc-expr)) #f))))
        (current-bundle b2)
@@ -405,7 +405,7 @@
                      [bind-name? (and name #t)]
                      [bind-nested? (pair? nested-attrs)]
                      [-args+role (wrap-exprs aenv (append (argu->exprs argu) (list role)))])
-         #'(h-parser parser -args+role (quote bind-name?) (quote bind-nested?)))]
+         #'(h-parser (lambda () parser) -args+role (quote bind-name?) (quote bind-nested?)))]
       [(hpat:reflect obj argu attr-decls name nested-attrs)
        (with-syntax ([bind-name? (and name #t)]
                      [attr-decls attr-decls]
@@ -460,11 +460,12 @@
 ;; Wrapped Expressions (see also residual-interp.rkt)
 
 (begin-for-syntax
-  ;; A Bundle is (bundle (Listof Expr) Nat).
+  ;; A Bundle is (bundle (Listof Delayed[Expr]) Nat).
   (struct bundle (rexprs next) #:mutable #:transparent)
   (define (new-bundle) (bundle null 0))
 
   (define current-bundle (make-parameter #f))
+  (define (bundle-exprs b) (map F (reverse (bundle-rexprs b))))
 
   (define (with-reset-bundle proc)
     (parameterize ((current-bundle (current-bundle))) (proc)))
@@ -522,13 +523,13 @@
 
   (define optimize-matrix0 (make-optimizer first-desc-s))
 
-  (define (compile-pattern-matrix rows)
-    (define expr (F (compile-matrix rows)))
+  (define (compile-pattern-matrix rows aenv0)
+    (define expr (F (compile-matrix rows aenv0)))
     (log-syntax-parse-info "compiled matrix:\n~a"
                            (pretty-format (syntax->datum expr) #:mode 'print))
     expr)
 
-  (define (compile-row row)
+  (define (compile-row row aenv0)
     (define (compile-s* p aenv)
       (let ([p (if SIMPLIFY? (simplify p) p)])
         (compile-s p aenv)))
@@ -541,19 +542,19 @@
                    (cons (compile-s* p aenv) acc))))
        (D #`(m-row (list #,@(map F ps-exprs)) #,k))]
       [(row/and mat)
-       (define mat-expr (compile-matrix mat))
+       (define mat-expr (compile-matrix mat aenv0))
        (D #`(m-and #,(F mat-expr)))]
       [(row/pair first-descs mat)
-       (define mat-expr (compile-matrix mat))
+       (define mat-expr (compile-matrix mat aenv0))
        (D #`(m-pair (quote #,first-descs) #,(F mat-expr)))]
       [(row/same sp mat)
-       (define sp-expr (compile-s* sp null)) ;; FIXME???
-       (define mat-expr (compile-matrix mat))
+       (define sp-expr (compile-s* sp aenv0))
+       (define mat-expr (compile-matrix mat aenv0))
        (D #`(m-same #,(F sp-expr) #,(F mat-expr)))]))
 
-  (define (compile-matrix rows)
+  (define (compile-matrix rows aenv0)
     (define (reset/compile-row row)
-      (with-reset-bundle (lambda () (compile-row row))))
+      (with-reset-bundle (lambda () (compile-row row aenv0))))
     (match rows
       [(list row)
        (reset/compile-row row)]
@@ -579,35 +580,41 @@
       (and (not splicing?) ;; FIXME: commit? needed?
            (patterns-cannot-fail? patterns)))
     (when (and no-fail? ctx) (log-syntax-parse-debug "(stxclass) cannot fail: ~e" ctx))
+    (define b (new-bundle))
+    (define aenv0 '(#f))
     (define patterns-p
-      (cond [(and (not splicing?)
-                  (let ([init-rows
-                         (for/list ([p (in-list patterns)])
-                           (define p-attrs (pattern-attrs* p))
-                           (define exp-attrs (reorder-iattrs relsattrs p-attrs))
-                           (define k
-                             (cond [(make-reordering exp-attrs p-attrs)
-                                    => (lambda (reo) #`(reordering (quote #,reo)))]
-                                   [else #'values]))
-                           (row1 null (list p) k))])
-                    (optimize-matrix0 ctx init-rows)))
-             => (lambda (rows) #`(s-matrix #,(compile-pattern-matrix rows)))]
-            [else
-             (define (compile+reorder p)
-               (define cp (if splicing? (compile-hpattern p) (compile-pattern p)))
-               (define p-attrs (pattern-attrs* p))
-               (define exp-attrs (reorder-iattrs relsattrs p-attrs))
-               (F (reorder exp-attrs p-attrs cp splicing?)))
-             (match patterns
-               [(list p) (compile+reorder p)]
-               [ps #`(p-or #,@(map compile+reorder ps))])]))
-    (define body-p
+      (parameterize ((current-bundle b))
+        (cond [(and (not splicing?)
+                    (let ([init-rows
+                           (for/list ([p (in-list patterns)])
+                             (define p-attrs (cons #f (pattern-attrs* p)))
+                             (define exp-attrs (reorder-iattrs relsattrs p-attrs))
+                             (define k
+                               (cond [(make-reordering exp-attrs p-attrs)
+                                      => (lambda (reo) #`(reordering (quote #,reo)))]
+                                     [else #'values]))
+                             (row1 aenv0 (list p) k))])
+                      (optimize-matrix0 ctx init-rows)))
+               => (lambda (rows) #`(s-matrix #,(compile-pattern-matrix rows aenv0)))]
+              [else
+               (define (compile+reorder p)
+                 (define cp (if splicing? (compile-hpattern p aenv0) (compile-pattern p aenv0)))
+                 (define p-attrs (cons #f (pattern-attrs* p)))
+                 (define exp-attrs (reorder-iattrs relsattrs p-attrs))
+                 (F (reorder exp-attrs p-attrs cp splicing?)))
+               (match patterns
+                 [(list p) (compile+reorder p)]
+                 [ps #`(p-or #,@(map compile+reorder ps))])])))
+    (define matcher-p
       (let* ([p patterns-p]
              [p (cond [delimit-cut? #`(p-delimit #,p)]
                       [else p])]
              [p (cond [commit? #`(p-commit #,p)]
-                      [else p])]
-             [p (with-syntax ([-info (wrap-exprs null (list description #''#f))])
+                      [else p])])
+        p))
+    (define body-p
+      (let* ([p #'matcher]
+             [p (with-syntax ([-info (wrap-exprs aenv0 (list description #''#f))])
                   (cond [splicing? #`(h-describe -info (quote #,transparent?) #,p rl)]
                         [else #`(s-describe -info (quote #,transparent?) #,p rl)]))])
         p))
@@ -624,17 +631,26 @@
                            (apply sk/parser fh us rx rcx rpr (reverse renv)))
                        #'(lambda (fh cp us renv)
                            (apply sk/parser fh us (reverse renv))))]
-                  [body-p body-p])
-      #`(lambda (x cx pr es us fh cp rl sk/parser . formals*)
-          (with ([this-syntax x]
-                 [this-role rl])
-            def ...
-            vdef ... ...
-            (#%expression
-             (syntax-parameterize ((this-context-syntax
-                                    (make-this-context-syntax-transformer #'pr)))
-               (let ([es (if no-fail? #f es)])
-                 ((body-p x cx pr es null) sk/adapter fh cp us))))))))
+                  [matcher-p matcher-p]
+                  [body-p body-p]
+                  [init-renv
+                   (let ([bundled-exprs (bundle-exprs b)])
+                     (cond [(null? bundled-exprs)
+                            #'(quote (#()))]
+                           [else
+                            (with-syntax ([(bundled-expr ...) bundled-exprs])
+                              #'(list (vector bundled-expr ...)))]))])
+      #`(let ([matcher matcher-p])
+          (lambda (x cx pr es us fh cp rl sk/parser . formals*)
+            (with ([this-syntax x]
+                   [this-role rl])
+              def ...
+              vdef ... ...
+              (#%expression
+               (syntax-parameterize ((this-context-syntax
+                                      (make-this-context-syntax-transformer #'pr)))
+                 (let ([es (if no-fail? #f es)])
+                   ((body-p x cx pr es init-renv) sk/adapter fh cp us)))))))))
 
   (define (codegen-clauses who context x all-defs patterns body-exprs ctx track-literals?)
     (define result-id (datum->syntax #f (string->unreadable-symbol "result")))
@@ -650,7 +666,7 @@
                            (row1 null (list p) #'values))])
                (optimize-matrix0 ctx rows))
              => (lambda (rows)
-                  #`(s-matrix #,(compile-pattern-matrix rows)))]
+                  #`(s-matrix #,(compile-pattern-matrix rows null)))]
             [else #`(p-or #,@(map compile-pattern clause-ps))]))
     (with-syntax ([(who context x) (list who context x)]
                   [(def ...) all-defs]

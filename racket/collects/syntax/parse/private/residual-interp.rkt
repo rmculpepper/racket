@@ -149,7 +149,7 @@
 (define (s-var x cx pr es renv)
   (succeed (cons (datum->syntax cx x cx) renv)))
 
-(define ((s-parser parser -args+role bind-name? bind-nested?) x cx pr es renv)
+(define ((s-parser get-parser -args+role bind-name? bind-nested?) x cx pr es renv)
   (lambda (sk fh cp us)
     (define (sk/parser fh us . avs)
       (sk fh cp us
@@ -157,7 +157,7 @@
                  [renv (if bind-nested? (append (reverse avs) renv) renv)])
             renv)))
     (define-values (kws kwargs pargs role) (unwrap renv -args+role))
-    (kwapply parser kws kwargs x cx pr es us fh cp role sk/parser pargs)))
+    (kwapply (get-parser) kws kwargs x cx pr es us fh cp role sk/parser pargs)))
 
 (define (s-reflect -obj+args arity attr-decls bind-all?)
   (lambda (x cx pr es renv)
@@ -494,7 +494,7 @@
 ;; h : HeadPattern
 ;; => (Stxish Syntax Progress ExpectStack REnv -> BT[REnv Stxish Syntax Progress])
 
-(define ((h-parser parser -args+role bind-name? bind-nested?) x cx pr es renv)
+(define ((h-parser get-parser -args+role bind-name? bind-nested?) x cx pr es renv)
   (lambda (sk fh cp us)
     (define (sk/parser fh us rx rcx rpr . avs)
       (define (get-list) (stx-list-take x (ps-difference pr rpr)))
@@ -504,7 +504,7 @@
             renv)
           rx rcx rpr))
     (define-values (kws kwargs pargs role) (unwrap renv -args+role))
-    (kwapply parser kws kwargs x cx pr es us fh cp role sk/parser pargs)))
+    (kwapply (get-parser) kws kwargs x cx pr es us fh cp role sk/parser pargs)))
 
 (define (h-reflect -obj+args arity attr-decls bind-all?)
   (lambda (x cx pr es renv)
