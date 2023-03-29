@@ -60,14 +60,15 @@
                   [else
                    (loop (cdr result) indexes (add1 i))])))
         (make-keyword-procedure
-         (lambda (kws kwargs x cx pr es undos fh cp rl success . rest)
-           (keyword-apply parser kws kwargs x cx pr es undos fh cp rl
-                          (if splicing?
-                              (lambda (fh undos x cx pr . result)
-                                (apply success fh undos x cx pr (take-indexes result indexes)))
-                              (lambda (fh undos . result)
-                                (apply success fh undos (take-indexes result indexes))))
-                          rest))))))
+         (lambda (kws kwargs x cx pr es rl . rest)
+           (lambda (sk fh cp us)
+             (define sk/adapt
+               (if splicing?
+                   (lambda (fh cp us avec)
+                     (sk fh cp us (take-indexes avec indexes)))
+                   (lambda (fh cp us avec rx rcx rpr)
+                     (sk fh cp us (take-indexes avec indexes) rx rcx rpr))))
+             ((keyword-apply parser kws kwargs x cx pr es rl rest) sk/adapt fh cp us)))))))
 
 (define (wrong-depth who a b)
   (error who

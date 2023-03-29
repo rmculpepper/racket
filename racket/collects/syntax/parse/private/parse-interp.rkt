@@ -239,6 +239,12 @@
                     (D #`(s-reorder (quote #,reordering) #,(F p)))))]
           [else p]))
 
+  (define (variant-reorder to-iattrs from-iattrs p head-pattern?)
+    (define reordering (make-reordering* to-iattrs from-iattrs))
+    (if head-pattern?
+        (D #`(h-variant-wrapper (quote #,reordering) #,(F p)))
+        (D #`(s-variant-wrapper (quote #,reordering) #,(F p)))))
+
   (define (attr=? a1 a2)
     (and a1 a2 (bound-identifier=? (attr-name a1) (attr-name a2))))
 
@@ -610,8 +616,8 @@
                              (define p-attrs (cons #f (pattern-attrs* p)))
                              (define exp-attrs (reorder-iattrs relsattrs p-attrs))
                              (define k
-                               (cond [(make-reordering exp-attrs p-attrs)
-                                      => (lambda (reo) #`(reordering (quote #,reo)))]
+                               (cond [(make-reordering* exp-attrs p-attrs)
+                                      => (lambda (reo) #`(variant-reordering (quote #,reo)))]
                                      [else #'values]))
                              (row1 aenv0 (list p) k))])
                       (optimize-matrix0 ctx init-rows)))
@@ -621,7 +627,7 @@
                  (define cp (if splicing? (compile-hpattern p aenv0) (compile-pattern p aenv0)))
                  (define p-attrs (cons #f (pattern-attrs* p)))
                  (define exp-attrs (reorder-iattrs relsattrs p-attrs))
-                 (F (reorder exp-attrs p-attrs cp splicing?)))
+                 (F (variant-reorder exp-attrs p-attrs cp splicing?)))
                (match patterns
                  [(list p) (compile+reorder p)]
                  [ps #`(p-or #,@(map compile+reorder ps))])])))
@@ -660,6 +666,21 @@
                            [else
                             (with-syntax ([(bundled-expr ...) bundled-exprs])
                               #'(list (vector bundled-expr ...)))]))])
+      ;; NOTE: Changes to stxclass protocol:
+      ;; - drop us,fh,cp,sk arguments; returns BT[(vector AttrVal ...) <H stuff>]
+      ;;   attrs vec is in reverse order wrt relsattrs
+      #`(let ([matcher matcher-p])
+          (lambda (x cx pr es rl . formals*)
+            (with ([this-syntax x]
+                   [this-role rl])
+              def ...
+              vdef ... ...
+              (#%expression
+               (syntax-parameterize ((this-context-syntax
+                                      (make-this-context-syntax-transformer #'pr)))
+                 (let ([es (if no-fail? #f es)])
+                   (body-p x cx pr es init-renv)))))))
+      #;
       #`(let ([matcher matcher-p])
           (lambda (x cx pr es us fh cp rl sk/parser . formals*)
             (with ([this-syntax x]

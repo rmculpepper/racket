@@ -144,6 +144,15 @@
 (define ((reordering reo) renv)
   (apply-reordering reo renv))
 
+;; apply-variant-reordering : Reordering REnv -> Vector
+(define (apply-variant-reordering reo renv)
+  (define-values (vec renv-base) (apply-reordering* reo renv))
+  vec)
+
+;; variant-reordering : Reordering -> REnv -> Vector
+(define ((variant-reordering reo) renv)
+  (apply-variant-reordering reo renv))
+
 (define (stx-e v) (if (syntax? v) (syntax-e v) v))
 
 (define (append-reverse xs base)
@@ -172,38 +181,31 @@
   (succeed (cons (datum->syntax cx x cx) renv)))
 
 (define (call-s-parser parser kws kwargs pargs role bind-name? bind-nested?
-                       x cx pr es renv
-                       sk fh cp us)
-  (define (sk/parser fh us . avs)
-    (sk fh cp us
-        (let* ([renv (if bind-name? (cons (datum->syntax cx x cx) renv) renv)]
-               [renv (if bind-nested? (append-reverse avs renv) renv)])
-          renv)))
-  (kwapply parser kws kwargs x cx pr es us fh cp role sk/parser pargs))
+                       x cx pr es renv)
+  (bind (kwapply parser kws kwargs x cx pr es role pargs)
+        (lambda (avec)
+          (let* ([renv (if bind-name? (cons (datum->syntax cx x cx) renv) renv)]
+                 [renv (if bind-nested? (append-vector avec renv) renv)])
+            (succeed renv)))))
 
-(define ((s-parser parser -args+role bind-name? bind-nested?) x cx pr es renv)
-  (lambda (sk fh cp us)
+(define (s-parser parser -args+role bind-name? bind-nested?)
+  (lambda (x cx pr es renv)
     (define-values (kws kwargs pargs role) (unwrap renv -args+role))
     (call-s-parser parser kws kwargs pargs role bind-name? bind-nested?
-                   x cx pr es renv
-                   sk fh cp us)))
+                   x cx pr es renv)))
 
 (define (s-parser/delay get-parser -args+role bind-name? bind-nested?)
   (lambda (x cx pr es renv)
-    (lambda (sk fh cp us)
     (define-values (kws kwargs pargs role) (unwrap renv -args+role))
     (call-s-parser (get-parser) kws kwargs pargs role bind-name? bind-nested?
-                   x cx pr es renv
-                   sk fh cp us))))
+                   x cx pr es renv)))
 
 (define (s-reflect -obj+args arity attr-decls bind-all?)
   (lambda (x cx pr es renv)
-    (lambda (sk fh cp us)
-      (define-values (obj kws kwargs pargs) (unwrap renv -obj+args))
-      (define parser (reflect-parser obj arity attr-decls #f))
-      (call-s-parser parser kws kwargs pargs #f bind-all? bind-all?
-                     x cx pr es renv
-                     sk fh cp us))))
+    (define-values (obj kws kwargs pargs) (unwrap renv -obj+args))
+    (define parser (reflect-parser obj arity attr-decls #f))
+    (call-s-parser parser kws kwargs pargs #f bind-all? bind-all?
+                   x cx pr es renv)))
 
 (define (s-match-expr x cx pr es renv)
   (define (expr-stx? v) (not (and (syntax? v) (keyword? (syntax-e v)))))
@@ -304,6 +306,11 @@
   (bind (p x cx pr es renv)
         (lambda (renv)
           (succeed (apply-reordering reordering renv)))))
+
+(define ((s-variant-wrapper reordering p) x cx pr es renv)
+  (bind (p x cx pr es renv)
+        (lambda (renv)
+          (succeed (apply-variant-reordering reordering renv)))))
 
 ;; ----------------------------------------
 
@@ -528,41 +535,32 @@
 ;; => (Stxish Syntax Progress ExpectStack REnv -> BT[REnv Stxish Syntax Progress])
 
 (define (call-h-parser parser kws kwargs pargs role bind-name? bind-nested?
-                       x cx pr es renv
-                       sk fh cp us)
-  (define (sk/parser fh us rx rcx rpr . avs)
-    (define (get-list) (stx-list-take x (ps-difference pr rpr)))
-    (sk fh cp us
-        (let* ([renv (if bind-name? (cons (get-list) renv) renv)]
-               [renv (if bind-nested? (append-reverse avs renv) renv)])
-          renv)
-        rx rcx rpr))
-  (kwapply parser kws kwargs x cx pr es us fh cp role sk/parser pargs))
+                       x cx pr es renv)
+  (bind (kwapply parser kws kwargs x cx pr es role pargs)
+        (lambda (avec rx rcx rpr)
+          (define (get-list) (stx-list-take x (ps-difference pr rpr)))
+          (let* ([renv (if bind-name? (cons (get-list) renv) renv)]
+                 [renv (if bind-nested? (append-vector avec renv) renv)])
+            (succeed renv rx rcx rpr)))))
 
 (define (h-parser parser -args+role bind-name? bind-nested?)
   (lambda (x cx pr es renv)
-    (lambda (sk fh cp us)
-      (define-values (kws kwargs pargs role) (unwrap renv -args+role))
-      (call-h-parser parser kws kwargs pargs role bind-name? bind-nested?
-                     x cx pr es renv
-                     sk fh cp us))))
+    (define-values (kws kwargs pargs role) (unwrap renv -args+role))
+    (call-h-parser parser kws kwargs pargs role bind-name? bind-nested?
+                   x cx pr es renv)))
 
 (define (h-parser/delay get-parser -args+role bind-name? bind-nested?)
   (lambda (x cx pr es renv)
-    (lambda (sk fh cp us)
-      (define-values (kws kwargs pargs role) (unwrap renv -args+role))
-      (call-h-parser (get-parser) kws kwargs pargs role bind-name? bind-nested?
-                     x cx pr es renv
-                     sk fh cp us))))
+    (define-values (kws kwargs pargs role) (unwrap renv -args+role))
+    (call-h-parser (get-parser) kws kwargs pargs role bind-name? bind-nested?
+                   x cx pr es renv)))
 
 (define (h-reflect -obj+args arity attr-decls bind-all?)
   (lambda (x cx pr es renv)
-    (lambda (sk fh cp us)
-      (define-values (obj kws kwargs pargs) (unwrap renv -obj+args))
-      (define parser (reflect-parser obj arity attr-decls #t))
-      (call-h-parser parser kws kwargs pargs #f bind-all? bind-all?
-                     x cx pr es renv
-                     sk fh cp us))))
+    (define-values (obj kws kwargs pargs) (unwrap renv -obj+args))
+    (define parser (reflect-parser obj arity attr-decls #t))
+    (call-h-parser parser kws kwargs pargs #f bind-all? bind-all?
+                   x cx pr es renv)))
 
 (define ((h-single sp sp-first-desc) x cx pr es renv)
   (define d (stx-e x))
@@ -627,6 +625,11 @@
   (bind (hp x cx (ps-add-post pr) es renv)
         (lambda (renv x cx pr)
           (succeed renv x cx (ps-pop-post pr)))))
+
+(define ((h-variant-wrapper reordering hp) x cx pr es renv)
+  (bind (hp x cx pr es renv)
+        (lambda (renv rx rcx rpr)
+          (succeed (apply-variant-reordering reordering renv) rx rcx rpr))))
 
 ;; ============================================================
 ;; Simple Patterns (see also (submod "rep-patterns.rkt" simple))
