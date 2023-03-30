@@ -120,7 +120,9 @@
                      [bind-nested? (pair? nested-attrs)]
                      [-args+role (wrap-exprs aenv (append (argu->exprs argu) (list role)))])
          (if (already-defined? #'parser)
-             #'(s-parser parser -args+role (quote bind-name?) (quote bind-nested?))
+             (if (and (equal? argu no-arguments) (false/false-expr? role))
+                 #'(s-parser parser #f (quote bind-name?) (quote bind-nested?))
+                 #'(s-parser parser -args+role (quote bind-name?) (quote bind-nested?)))
              #'(s-parser/delay (λ () parser) -args+role (quote bind-name?) (quote bind-nested?))))]
       [(pat:reflect obj argu attr-decls name nested-attrs)
        (with-syntax ([bind-name? (and name #t)]

@@ -190,9 +190,16 @@
 
 (define (s-parser parser -args+role bind-name? bind-nested?)
   (lambda (x cx pr es renv)
-    (define-values (kws kwargs pargs role) (unwrap renv -args+role))
-    (call-s-parser parser kws kwargs pargs role bind-name? bind-nested?
-                   x cx pr es renv)))
+    (cond [-args+role
+           (define-values (kws kwargs pargs role) (unwrap renv -args+role))
+           (call-s-parser parser kws kwargs pargs role bind-name? bind-nested?
+                          x cx pr es renv)]
+          [else
+           (bind (parser x cx pr es #f)
+                 (lambda (avec)
+                   (let* ([renv (if bind-name? (cons (datum->syntax cx x cx) renv) renv)]
+                          [renv (if bind-nested? (append-vector avec renv) renv)])
+                     (succeed renv))))])))
 
 (define (s-parser/delay get-parser -args+role bind-name? bind-nested?)
   (lambda (x cx pr es renv)
