@@ -35,24 +35,23 @@
            description)
          (define parser
            (let ([permute (mk-permute '(a.name ...))])
-             (lambda (x cx pr es undos fh _cp rl success param ...)
-               (let ([stx (datum->syntax cx x cx)])
-                 (let ([result
-                        (let/ec escape
-                          (cons 'ok
-                                (proc stx
-                                      (lambda ([msg #f] [stx #f])
-                                        (escape (list 'error msg stx))))))])
-                   (case (car result)
-                     ((ok)
-                      (apply success
-                             ((mk-check-result pr 'name (length '(a.name ...)) permute x cx undos fh)
-                              (cdr result))))
-                     ((error)
-                      (let ([es
-                             (es-add-message (cadr result)
-                                             (es-add-thing pr (get-description param ...) #f rl es))])
-                        (fh undos (failure pr es))))))))))
+             (lambda (x cx pr es rl param ...)
+               (lambda (sk fh cp us)
+                 (define stx (datum->syntax cx x cx))
+                 (define result
+                   (let/ec escape
+                     (cons 'ok
+                           (proc stx
+                                 (lambda ([msg #f] [stx #f])
+                                   (escape (list 'error msg stx)))))))
+                 (case (car result)
+                   ((ok)
+                    (apply sk fh fh us
+                           (check-result pr 'name (length '(a.name ...)) permute x cx (cdr result))))
+                   ((error)
+                    (let* ([es (es-add-thing pr (get-description param ...) #f rl es)]
+                           [es (es-add-message (cadr result) es)])
+                      (fh us (failure pr es)))))))))
          (define-syntax name
            (stxclass 'name (arity (length '(param ...)) (length '(param ...)) '() '())
                      (sort-sattrs '(#s(attr a.name a.depth #f) ...))
@@ -62,8 +61,9 @@
                      #f)))]))
 
 (define (mk-permute unsorted-attrs)
-  (let ([sorted-attrs
-         (sort unsorted-attrs string<? #:key symbol->string #:cache-keys? #t)])
+  (let* ([sorted-attrs
+          (sort unsorted-attrs string<? #:key symbol->string #:cache-keys? #t)]
+         [sorted-attrs (reverse sorted-attrs)])
     (if (equal? unsorted-attrs sorted-attrs)
         values
         (let* ([pos-table
@@ -73,23 +73,21 @@
                 (for/vector ([a (in-list sorted-attrs)])
                   (hash-ref pos-table a))])
           (lambda (result)
-            (for/list ([index (in-vector indexes)])
+            (for/vector ([index (in-vector indexes)])
               (list-ref result index)))))))
 
-(define (mk-check-result pr name attr-count permute x cx undos fh)
-  (lambda (result)
-    (unless (list? result)
-      (error name "parser returned non-list"))
-    (let ([rlength (length result)])
-      (unless (= rlength (+ 1 attr-count))
-        (error name "parser returned list of wrong length; expected length ~s, got ~e"
-               (+ 1 attr-count)
-               result))
-      (let ([skip (car result)])
-        ;; Compute rest-x & rest-cx from skip
-        (unless (exact-nonnegative-integer? skip)
-          (error name "expected exact nonnegative integer for first element of result list, got ~e"
-                 skip))
-        (let-values ([(rest-x rest-cx) (stx-list-drop/cx x cx skip)])
-          (list* fh undos rest-x rest-cx (ps-add-cdr pr skip)
-                 (permute (cdr result))))))))
+(define (check-result pr name attr-count permute x cx result)
+  (unless (list? result)
+    (error name "parser returned non-list"))
+  (let ([rlength (length result)])
+    (unless (= rlength (+ 1 attr-count))
+      (error name "parser returned list of wrong length; expected length ~s, got ~e"
+             (+ 1 attr-count)
+             result))
+    (let ([skip (car result)])
+      ;; Compute rest-x & rest-cx from skip
+      (unless (exact-nonnegative-integer? skip)
+        (error name "expected exact nonnegative integer for first element of result list, got ~e"
+               skip))
+      (let-values ([(rest-x rest-cx) (stx-list-drop/cx x cx skip)])
+        (list* rest-x rest-cx (ps-add-cdr pr skip) (permute (cdr result)))))))
